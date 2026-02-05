@@ -1,0 +1,21 @@
+{
+	"name": "@vaman-ai/agent",
+	"version": "0.1.0",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"scripts": {
+		"build": "tsc",
+		"dev": "tsc --watch",
+		"clean": "rm -rf dist",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@mariozechner/pi-ai": "^0.51.6",
+		"@mariozechner/pi-agent-core": "^0.51.6",
+		"@vaman-ai/shared": "*"
+	},
+	"devDependencies": {
+		"vitest": "^3.2.4"
+	}
+}
