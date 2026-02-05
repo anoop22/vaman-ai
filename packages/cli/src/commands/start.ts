@@ -20,13 +20,15 @@ export async function startCommand(opts: { foreground?: boolean }) {
 		// Not running, continue
 	}
 
+	// Monorepo root is 4 dirs up from packages/cli/src/commands/
+	const monorepoRoot = resolve(import.meta.dirname, "../../../..");
+	const gatewayEntry = resolve(monorepoRoot, "packages/gateway/src/main.ts");
+
 	if (opts.foreground) {
 		log.info(`Starting gateway in foreground on ws://${host}:${port}`);
-		const gatewayEntry = resolve(import.meta.dirname, "../../gateway/src/index.ts");
-		// Use tsx to run gateway directly
 		const child = spawn("npx", ["tsx", gatewayEntry], {
 			stdio: "inherit",
-			cwd: resolve(import.meta.dirname, "../../../"),
+			cwd: monorepoRoot,
 			env: { ...process.env },
 		});
 		child.on("exit", (code) => {
@@ -34,17 +36,15 @@ export async function startCommand(opts: { foreground?: boolean }) {
 		});
 	} else {
 		log.info(`Starting gateway daemon on ws://${host}:${port}`);
-		const gatewayEntry = resolve(import.meta.dirname, "../../../packages/gateway/src/index.ts");
-		const logFile = resolve(import.meta.dirname, "../../../data/logs/gateway.log");
 		const child = spawn("npx", ["tsx", gatewayEntry], {
 			detached: true,
 			stdio: ["ignore", "pipe", "pipe"],
-			cwd: resolve(import.meta.dirname, "../../../"),
+			cwd: monorepoRoot,
 			env: { ...process.env },
 		});
 
 		// Write PID file
-		const pidFile = resolve(import.meta.dirname, "../../../data/gateway.pid");
+		const pidFile = resolve(monorepoRoot, "data/gateway.pid");
 		writeFileSync(pidFile, String(child.pid), "utf-8");
 
 		child.unref();
