@@ -56,10 +56,24 @@ export class DiscordAdapter implements ChannelAdapter {
 
 			log.info(`Message from ${message.author.tag} in ${sessionKey}`);
 
+			// Show typing indicator while processing
+			const ch = message.channel.partial
+				? await message.channel.fetch()
+				: message.channel;
+			const sendTyping = () => {
+				(ch as any).sendTyping?.().catch((err: any) => {
+					log.warn(`sendTyping failed: ${err.message}`);
+				});
+			};
+			sendTyping();
+			const typingInterval = setInterval(sendTyping, 8000);
+
 			try {
 				await this.options.onMessage(sessionKey, message.content, message.id);
 			} catch (err) {
 				log.error("Message handler error:", err);
+			} finally {
+				clearInterval(typingInterval);
 			}
 		});
 

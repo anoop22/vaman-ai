@@ -1,7 +1,7 @@
 import { Agent } from "@mariozechner/pi-agent-core";
 import type { VamanConfig } from "@vaman-ai/shared";
 import { createLogger } from "@vaman-ai/shared";
-import { resolveProvider, resolveModel, getApiKey } from "./providers.js";
+import { resolveProvider, resolveModel, getApiKey, getApiKeyAsync } from "./providers.js";
 
 const log = createLogger("agent");
 
@@ -24,7 +24,7 @@ export function createVamanAgent(options: VamanAgentOptions): Agent {
 			model,
 			tools: tools || [],
 		},
-		getApiKey: () => getApiKey(provider),
+		getApiKey: () => provider.isOAuth ? getApiKeyAsync(provider) : getApiKey(provider),
 	});
 
 	return agent;
