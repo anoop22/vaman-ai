@@ -14,6 +14,8 @@
 	"dependencies": {
 		"@vaman-ai/shared": "*",
 		"@vaman-ai/agent": "*",
+		"@vaman-ai/discord": "*",
+		"@vaman-ai/skills": "*",
 		"ws": "^8.18.0",
 		"chokidar": "^4.0.3",
 		"croner": "^9.0.0"
