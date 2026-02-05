@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "paths": {
+      "@vaman-ai/shared": ["./packages/shared/src/index.ts"],
+      "@vaman-ai/shared/*": ["./packages/shared/src/*"],
+      "@vaman-ai/agent": ["./packages/agent/src/index.ts"],
+      "@vaman-ai/agent/*": ["./packages/agent/src/*"],
+      "@vaman-ai/gateway": ["./packages/gateway/src/index.ts"],
+      "@vaman-ai/gateway/*": ["./packages/gateway/src/*"]
+    }
+  },
+  "include": ["packages/*/src/**/*", "packages/*/test/**/*"],
+  "exclude": ["**/dist/**"]
+}
