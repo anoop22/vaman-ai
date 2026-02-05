@@ -12,6 +12,7 @@ import { stopCommand, restartCommand } from "./commands/stop.js";
 import { statusCommand } from "./commands/status.js";
 import { sessionsCommand, resumeCommand } from "./commands/sessions.js";
 import { talkCommand } from "./commands/talk.js";
+import { onboardCommand } from "./commands/onboard.js";
 
 const program = new Command();
 
@@ -42,6 +43,11 @@ program
 	.command("talk")
 	.description("Start voice conversation mode (Parakeet STT + Kokoro TTS)")
 	.action(talkCommand);
+
+program
+	.command("onboard")
+	.description("Interactive setup wizard for first-time configuration")
+	.action(onboardCommand);
 
 // Default to chat if no command given
 program.action(chatCommand);
