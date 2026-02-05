@@ -6,7 +6,7 @@
   "workspaces": ["packages/*"],
   "scripts": {
     "clean": "npm run clean --workspaces --if-present",
-    "build": "npm run build -w packages/shared && npm run build -w packages/agent && npm run build -w packages/gateway && npm run build -w packages/discord && npm run build -w packages/gmail && npm run build -w packages/cli",
+    "build": "npm run build -w packages/shared && npm run build -w packages/agent && npm run build -w packages/skills && npm run build -w packages/gateway && npm run build -w packages/discord && npm run build -w packages/gmail && npm run build -w packages/cli",
     "dev": "npm run dev --workspaces --if-present",
     "check": "biome check --write . && tsc --noEmit",
     "test": "npm run test --workspaces --if-present"
