@@ -3,3 +3,4 @@ export { SessionManager, type SessionEntry, type SessionInfo } from "./session-m
 export { RestartManager, type RestartSentinel } from "./restart-sentinel.js";
 export { ConfigWatcher } from "./config-watcher.js";
 export { HeartbeatRunner, type HeartbeatOptions } from "./heartbeat.js";
+export { CronService, type CronJob, type CronRunResult, type CronCallbacks } from "./cron-service.js";
