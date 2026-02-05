@@ -1,0 +1,26 @@
+{
+	"name": "@vaman-ai/gateway",
+	"version": "0.1.0",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"scripts": {
+		"build": "tsc",
+		"dev": "tsc --watch",
+		"clean": "rm -rf dist",
+		"test": "vitest run",
+		"start": "tsx src/index.ts"
+	},
+	"dependencies": {
+		"@vaman-ai/shared": "*",
+		"@vaman-ai/agent": "*",
+		"ws": "^8.18.0",
+		"chokidar": "^4.0.3",
+		"croner": "^9.0.0"
+	},
+	"devDependencies": {
+		"@types/ws": "^8.5.14",
+		"vitest": "^3.2.4",
+		"tsx": "^4.20.3"
+	}
+}
