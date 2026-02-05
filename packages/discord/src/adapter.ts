@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Events, type Message as DiscordMessage } from "discord.js";
+import { Client, GatewayIntentBits, Events, Partials, type Message as DiscordMessage } from "discord.js";
 import { createLogger, type ChannelAdapter, type ChannelHealth, type OutboundMessage } from "@vaman-ai/shared";
 
 const log = createLogger("discord");
@@ -26,6 +26,7 @@ export class DiscordAdapter implements ChannelAdapter {
 				GatewayIntentBits.DirectMessages,
 				GatewayIntentBits.MessageContent,
 			],
+			partials: [Partials.Channel],
 		});
 	}
 
@@ -47,13 +48,13 @@ export class DiscordAdapter implements ChannelAdapter {
 
 			this.lastActivity = new Date();
 
-			// Build session key
+			// Build session key (include user ID for DMs so we can reply)
 			const isDM = !message.guild;
 			const sessionKey = isDM
-				? `main:discord:dm`
+				? `main:discord:dm:${message.author.id}`
 				: `main:discord:channel:${message.channelId}`;
 
-			log.debug(`Message from ${message.author.tag} in ${sessionKey}`);
+			log.info(`Message from ${message.author.tag} in ${sessionKey}`);
 
 			try {
 				await this.options.onMessage(sessionKey, message.content, message.id);
@@ -81,13 +82,12 @@ export class DiscordAdapter implements ChannelAdapter {
 			throw new Error("Discord not connected");
 		}
 
-		// Parse target: "dm" or "channel:<id>"
+		// Parse target: "dm:<userId>" or "channel:<id>"
 		let channel;
-		if (target === "dm") {
-			// Send to first DM channel (or use replyTo context)
-			// For now, this requires a channel ID or user ID
-			log.warn("DM target requires specific user context");
-			return;
+		if (target.startsWith("dm:")) {
+			const userId = target.slice(3);
+			const user = await this.client.users.fetch(userId);
+			channel = await user.createDM();
 		} else if (target.startsWith("channel:")) {
 			const channelId = target.slice(8);
 			channel = await this.client.channels.fetch(channelId);

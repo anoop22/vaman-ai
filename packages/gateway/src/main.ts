@@ -44,13 +44,15 @@ Be concise, helpful, and proactive. When you don't know something, say so. When 
 	let responseResolve: ((text: string) => void) | null = null;
 
 	agent.subscribe((event: any) => {
+		log.debug(`Agent event: ${event.type}`);
 		if (event.type === "message_update") {
 			const assistantEvent = event.assistantMessageEvent;
 			if (assistantEvent?.type === "text_delta") {
 				responseBuffer += assistantEvent.delta;
 			}
 		}
-		if (event.type === "message_end") {
+		if (event.type === "message_end" && event.message?.role === "assistant") {
+			log.info(`Agent response complete, length: ${responseBuffer.length}`);
 			if (responseResolve) {
 				responseResolve(responseBuffer);
 				responseResolve = null;
@@ -59,11 +61,21 @@ Be concise, helpful, and proactive. When you don't know something, say so. When 
 	});
 
 	async function promptAgent(input: string): Promise<string> {
+		log.info(`Prompting agent with: ${input.slice(0, 100)}`);
 		responseBuffer = "";
 		const promise = new Promise<string>((res) => {
 			responseResolve = res;
 		});
-		await agent.prompt(input);
+		try {
+			await agent.prompt(input);
+			log.info("agent.prompt() resolved");
+		} catch (err) {
+			log.error(`agent.prompt() threw: ${err}`);
+			if (responseResolve) {
+				responseResolve(`Error: ${err instanceof Error ? err.message : err}`);
+				responseResolve = null;
+			}
+		}
 		return promise;
 	}
 
