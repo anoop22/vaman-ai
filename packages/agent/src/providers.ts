@@ -1,5 +1,8 @@
+import { getModel } from "@mariozechner/pi-ai";
+import type { Model, Api, KnownProvider } from "@mariozechner/pi-ai";
+
 export interface ProviderConfig {
-	name: string;
+	name: KnownProvider;
 	model: string;
 	apiKeyEnv: string;
 }
@@ -18,7 +21,11 @@ export function resolveProvider(name: string, model: string): ProviderConfig {
 			`Unknown provider: ${name}. Available: ${Object.keys(PROVIDER_MAP).join(", ")}`,
 		);
 	}
-	return { name, model, apiKeyEnv: provider.apiKeyEnv };
+	return { name: name as KnownProvider, model, apiKeyEnv: provider.apiKeyEnv };
+}
+
+export function resolveModel(provider: ProviderConfig): Model<any> {
+	return getModel(provider.name as any, provider.model as any);
 }
 
 export function getApiKey(provider: ProviderConfig): string {

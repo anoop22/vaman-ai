@@ -1,7 +1,7 @@
 import { Agent } from "@mariozechner/pi-agent-core";
 import type { VamanConfig } from "@vaman-ai/shared";
 import { createLogger } from "@vaman-ai/shared";
-import { resolveProvider, getApiKey } from "./providers.js";
+import { resolveProvider, resolveModel, getApiKey } from "./providers.js";
 
 const log = createLogger("agent");
 
@@ -11,19 +11,20 @@ export interface VamanAgentOptions {
 	tools?: any[];
 }
 
-export async function createVamanAgent(options: VamanAgentOptions): Promise<Agent> {
+export function createVamanAgent(options: VamanAgentOptions): Agent {
 	const { config, systemPrompt, tools } = options;
 	const provider = resolveProvider(config.agent.defaultProvider, config.agent.defaultModel);
-	const apiKey = getApiKey(provider);
+	const model = resolveModel(provider);
 
 	log.info(`Creating agent with provider=${provider.name} model=${provider.model}`);
 
 	const agent = new Agent({
-		apiKey,
-		provider: provider.name,
-		model: provider.model,
-		systemPrompt: systemPrompt || getDefaultSystemPrompt(),
-		tools: tools || [],
+		initialState: {
+			systemPrompt: systemPrompt || getDefaultSystemPrompt(),
+			model,
+			tools: tools || [],
+		},
+		getApiKey: () => getApiKey(provider),
 	});
 
 	return agent;

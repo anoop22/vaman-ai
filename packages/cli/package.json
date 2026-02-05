@@ -1,0 +1,27 @@
+{
+	"name": "@vaman-ai/cli",
+	"version": "0.1.0",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"bin": {
+		"vaman": "./dist/cli.js"
+	},
+	"scripts": {
+		"build": "tsc",
+		"dev": "tsc --watch",
+		"clean": "rm -rf dist",
+		"test": "vitest run --passWithNoTests",
+		"start": "tsx src/cli.ts"
+	},
+	"dependencies": {
+		"@vaman-ai/shared": "*",
+		"@vaman-ai/agent": "*",
+		"commander": "^13.1.0",
+		"dotenv": "^16.4.7"
+	},
+	"devDependencies": {
+		"vitest": "^3.2.4",
+		"tsx": "^4.20.3"
+	}
+}

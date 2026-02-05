@@ -3,9 +3,9 @@ import { resolveProvider } from "../src/providers.js";
 
 describe("resolveProvider", () => {
 	it("resolves openrouter provider config", () => {
-		const provider = resolveProvider("openrouter", "google/gemini-3.0-flash");
+		const provider = resolveProvider("openrouter", "google/gemini-3-flash-preview");
 		expect(provider.name).toBe("openrouter");
-		expect(provider.model).toBe("google/gemini-3.0-flash");
+		expect(provider.model).toBe("google/gemini-3-flash-preview");
 	});
 
 	it("resolves anthropic provider config", () => {

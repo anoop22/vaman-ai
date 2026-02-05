@@ -7,7 +7,7 @@ export function loadConfig(): VamanConfig {
 			host: process.env.GATEWAY_HOST || "127.0.0.1",
 		},
 		agent: {
-			defaultModel: process.env.DEFAULT_MODEL || "google/gemini-3.0-flash",
+			defaultModel: process.env.DEFAULT_MODEL || "google/gemini-3-flash-preview",
 			defaultProvider: process.env.DEFAULT_PROVIDER || "openrouter",
 		},
 		discord: {
