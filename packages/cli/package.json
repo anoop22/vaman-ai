@@ -17,6 +17,7 @@
 	"dependencies": {
 		"@vaman-ai/shared": "*",
 		"@vaman-ai/agent": "*",
+		"@vaman-ai/gateway": "*",
 		"commander": "^13.1.0",
 		"dotenv": "^16.4.7",
 		"ws": "^8.18.0"

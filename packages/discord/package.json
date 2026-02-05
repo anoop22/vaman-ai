@@ -1,0 +1,20 @@
+{
+	"name": "@vaman-ai/discord",
+	"version": "0.1.0",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"scripts": {
+		"build": "tsc",
+		"dev": "tsc --watch",
+		"clean": "rm -rf dist",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@vaman-ai/shared": "*",
+		"discord.js": "^14.18.0"
+	},
+	"devDependencies": {
+		"vitest": "^3.2.4"
+	}
+}

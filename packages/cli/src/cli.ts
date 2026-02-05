@@ -10,6 +10,7 @@ import { chatCommand } from "./commands/chat.js";
 import { startCommand } from "./commands/start.js";
 import { stopCommand, restartCommand } from "./commands/stop.js";
 import { statusCommand } from "./commands/status.js";
+import { sessionsCommand, resumeCommand } from "./commands/sessions.js";
 
 const program = new Command();
 
@@ -28,6 +29,13 @@ program.command("stop").description("Stop the gateway daemon").action(stopComman
 program.command("restart").description("Restart the gateway daemon").action(restartCommand);
 
 program.command("status").description("Show gateway health status").action(statusCommand);
+
+program.command("sessions").description("List all sessions across channels").action(sessionsCommand);
+
+program
+	.command("resume <session-key>")
+	.description("Resume a session from the terminal")
+	.action(resumeCommand);
 
 // Default to chat if no command given
 program.action(chatCommand);
