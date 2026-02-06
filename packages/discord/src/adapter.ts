@@ -1,13 +1,24 @@
-import { Client, GatewayIntentBits, Events, Partials, type Message as DiscordMessage } from "discord.js";
+import {
+	Client, GatewayIntentBits, Events, Partials, REST, Routes, SlashCommandBuilder,
+	type Message as DiscordMessage, type ChatInputCommandInteraction,
+} from "discord.js";
 import { createLogger, type ChannelAdapter, type ChannelHealth, type OutboundMessage } from "@vaman-ai/shared";
 
 const log = createLogger("discord");
 
 const MAX_MESSAGE_LENGTH = 2000;
 
+export interface SlashCommandDef {
+	name: string;
+	description: string;
+	options?: { name: string; description: string; required?: boolean }[];
+}
+
 export interface DiscordAdapterOptions {
 	token: string;
 	onMessage: (sessionKey: string, content: string, replyTo: string) => Promise<void>;
+	onSlashCommand?: (commandName: string, args: Record<string, string>, sessionKey: string) => Promise<string>;
+	slashCommands?: SlashCommandDef[];
 	allowedUsers?: string[];
 }
 
@@ -31,10 +42,74 @@ export class DiscordAdapter implements ChannelAdapter {
 	}
 
 	async start(): Promise<void> {
-		this.client.on(Events.ClientReady, () => {
+		this.client.on(Events.ClientReady, async () => {
 			log.info(`Discord connected as ${this.client.user?.tag}`);
 			this.connected = true;
 			this.lastActivity = new Date();
+
+			// Register slash commands if provided
+			log.info(`Slash commands to register: ${this.options.slashCommands?.length ?? 0}, user: ${this.client.user?.id}`);
+			if (this.options.slashCommands?.length && this.client.user) {
+				try {
+					const rest = new REST({ version: "10" }).setToken(this.options.token);
+					const commands = this.options.slashCommands.map((cmd) => {
+						const builder = new SlashCommandBuilder()
+							.setName(cmd.name)
+							.setDescription(cmd.description);
+						for (const opt of cmd.options ?? []) {
+							builder.addStringOption((o) =>
+								o.setName(opt.name).setDescription(opt.description).setRequired(opt.required ?? false),
+							);
+						}
+						return builder.toJSON();
+					});
+					await rest.put(Routes.applicationCommands(this.client.user.id), { body: commands });
+					log.info(`Registered ${commands.length} slash commands`);
+				} catch (err) {
+					log.error(`Failed to register slash commands: ${err}`);
+				}
+			}
+		});
+
+		// Handle slash command interactions
+		this.client.on(Events.InteractionCreate, async (interaction) => {
+			if (!interaction.isChatInputCommand()) return;
+			if (!this.options.onSlashCommand) {
+				await interaction.reply({ content: "Commands not configured.", ephemeral: true });
+				return;
+			}
+
+			const cmd = interaction as ChatInputCommandInteraction;
+			const args: Record<string, string> = {};
+			for (const opt of cmd.options.data) {
+				if (typeof opt.value === "string") args[opt.name] = opt.value;
+			}
+
+			const isDM = !cmd.guild;
+			const sessionKey = isDM
+				? `main:discord:dm:${cmd.user.id}`
+				: `main:discord:channel:${cmd.channelId}`;
+
+			log.info(`Slash command /${cmd.commandName} from ${cmd.user.tag} in ${sessionKey}`);
+
+			try {
+				await cmd.deferReply();
+				const response = await this.options.onSlashCommand(cmd.commandName, args, sessionKey);
+				// Chunk if needed (Discord followUp limit is 2000)
+				const chunks = chunkMessage(response, MAX_MESSAGE_LENGTH);
+				await cmd.editReply(chunks[0]);
+				for (const chunk of chunks.slice(1)) {
+					await cmd.followUp(chunk);
+				}
+			} catch (err) {
+				log.error(`Slash command error: ${err}`);
+				const errMsg = `Error: ${err instanceof Error ? err.message : err}`;
+				if (cmd.deferred) {
+					await cmd.editReply(errMsg).catch(() => {});
+				} else {
+					await cmd.reply({ content: errMsg, ephemeral: true }).catch(() => {});
+				}
+			}
 		});
 
 		this.client.on(Events.MessageCreate, async (message: DiscordMessage) => {

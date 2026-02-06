@@ -1,5 +1,8 @@
-import { getModel, getOAuthApiKey } from "@mariozechner/pi-ai";
+import { getModel, getOAuthApiKey, getProviders, getModels } from "@mariozechner/pi-ai";
 import type { Model, Api, KnownProvider, OAuthCredentials } from "@mariozechner/pi-ai";
+
+// Re-export for gateway use
+export { getProviders, getModels };
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { resolve } from "path";
 import { createLogger } from "@vaman-ai/shared";
@@ -19,6 +22,14 @@ const PROVIDER_MAP: Record<string, { apiKeyEnv: string; isOAuth?: boolean }> = {
 	openai: { apiKeyEnv: "OPENAI_API_KEY" },
 	google: { apiKeyEnv: "GEMINI_API_KEY" },
 	"openai-codex": { apiKeyEnv: "", isOAuth: true },
+	xai: { apiKeyEnv: "XAI_API_KEY" },
+	groq: { apiKeyEnv: "GROQ_API_KEY" },
+	zai: { apiKeyEnv: "ZAI_API_KEY" },
+	"kimi-coding": { apiKeyEnv: "KIMI_API_KEY" },
+	mistral: { apiKeyEnv: "MISTRAL_API_KEY" },
+	cerebras: { apiKeyEnv: "CEREBRAS_API_KEY" },
+	opencode: { apiKeyEnv: "OPENCODE_API_KEY" },
+	huggingface: { apiKeyEnv: "HF_TOKEN" },
 };
 
 // OAuth credentials cache

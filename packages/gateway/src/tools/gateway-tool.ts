@@ -46,18 +46,16 @@ export class GatewayTool {
 			case "restart": {
 				const reason = (action.params?.reason as string) || "Agent-requested restart";
 				log.info(`Restart requested: ${reason}`);
-				// Write sentinel and trigger SIGUSR1
-				this.server.restart.write({
+				const result = this.server.restart.triggerRestart({
 					reason,
 					timestamp: Date.now(),
-					activeSession: action.params?.session as string,
-					pendingMessage: action.params?.message as string,
+					sessionKey: action.params?.session as string,
+					discordTarget: action.params?.discordTarget as string,
 				});
-				// Defer the actual restart
-				setTimeout(() => {
-					process.kill(process.pid, "SIGUSR1");
-				}, 100);
-				return { success: true, data: "Restarting..." };
+				if (result.ok) {
+					return { success: true, data: "Gateway restart triggered via systemctl. New process will start shortly." };
+				}
+				return { success: false, error: `Restart failed: ${result.detail}` };
 			}
 
 			case "cron.list":

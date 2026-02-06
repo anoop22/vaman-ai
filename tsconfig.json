@@ -8,7 +8,17 @@
       "@vaman-ai/agent": ["./packages/agent/src/index.ts"],
       "@vaman-ai/agent/*": ["./packages/agent/src/*"],
       "@vaman-ai/gateway": ["./packages/gateway/src/index.ts"],
-      "@vaman-ai/gateway/*": ["./packages/gateway/src/*"]
+      "@vaman-ai/gateway/*": ["./packages/gateway/src/*"],
+      "@vaman-ai/discord": ["./packages/discord/src/index.ts"],
+      "@vaman-ai/discord/*": ["./packages/discord/src/*"],
+      "@vaman-ai/skills": ["./packages/skills/src/index.ts"],
+      "@vaman-ai/skills/*": ["./packages/skills/src/*"],
+      "@vaman-ai/cli": ["./packages/cli/src/index.ts"],
+      "@vaman-ai/cli/*": ["./packages/cli/src/*"],
+      "@vaman-ai/gmail": ["./packages/gmail/src/index.ts"],
+      "@vaman-ai/gmail/*": ["./packages/gmail/src/*"],
+      "@vaman-ai/voice": ["./packages/voice/src/index.ts"],
+      "@vaman-ai/voice/*": ["./packages/voice/src/*"]
     }
   },
   "include": ["packages/*/src/**/*", "packages/*/test/**/*"],

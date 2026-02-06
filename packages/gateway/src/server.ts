@@ -10,6 +10,7 @@ const log = createLogger("gateway");
 export interface GatewayOptions {
 	config: VamanConfig;
 	dataDir: string;
+	watchPaths?: string[];
 }
 
 export class GatewayServer {
@@ -26,21 +27,12 @@ export class GatewayServer {
 		this.config = options.config;
 		this.sessions = new SessionManager(options.dataDir);
 		this.restart = new RestartManager(options.dataDir);
-		this.configWatcher = new ConfigWatcher([".env", "data/heartbeat/HEARTBEAT.md"]);
+		this.configWatcher = new ConfigWatcher(options.watchPaths ?? [".env", "data/heartbeat/HEARTBEAT.md"]);
 	}
 
 	/** Start the gateway server */
 	async start(): Promise<void> {
 		const { port, host } = this.config.gateway;
-
-		// Check for restart sentinel
-		const sentinel = this.restart.consume();
-		if (sentinel) {
-			log.info(`Resuming after restart: ${sentinel.reason}`);
-			if (sentinel.activeSession && sentinel.pendingMessage) {
-				log.info(`Pending message for session ${sentinel.activeSession}`);
-			}
-		}
 
 		// Start WebSocket server
 		this.wss = new WebSocketServer({ port, host });
@@ -85,17 +77,13 @@ export class GatewayServer {
 	}
 
 	/** Stop the gateway server */
-	async stop(reason?: string): Promise<void> {
-		if (reason) {
-			this.restart.write({ reason, timestamp: Date.now() });
-		}
-
+	async stop(): Promise<void> {
 		if (this.healthInterval) {
 			clearInterval(this.healthInterval);
 			this.healthInterval = null;
 		}
 
-		this.configWatcher.stop();
+		await this.configWatcher.stop();
 
 		for (const client of this.clients) {
 			client.close(1000, "Server shutting down");
@@ -148,12 +136,19 @@ export class GatewayServer {
 				break;
 			}
 
-			case "restart":
-				this.sendResponse(ws, { type: "res", id: req.id, ok: true, payload: "Restarting..." });
-				this.stop("Restart requested via API").then(() => {
-					process.kill(process.pid, "SIGUSR1");
+			case "restart": {
+				const result = this.restart.triggerRestart({
+					reason: "Restart requested via WS API",
+					timestamp: Date.now(),
+				});
+				this.sendResponse(ws, {
+					type: "res",
+					id: req.id,
+					ok: result.ok,
+					payload: result.ok ? "Restarting via systemctl..." : `Restart failed: ${result.detail}`,
 				});
 				break;
+			}
 
 			default:
 				this.sendResponse(ws, {

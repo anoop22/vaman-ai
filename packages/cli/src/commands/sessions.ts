@@ -64,15 +64,27 @@ export async function resumeCommand(sessionKey: string) {
 	const config = loadConfig();
 	const agent = createVamanAgent({ config });
 
+	// Track streamed response for session persistence
+	let responseBuffer = "";
+
 	// Subscribe for streaming
 	agent.subscribe((event: any) => {
 		if (event.type === "message_update") {
 			const assistantEvent = event.assistantMessageEvent;
 			if (assistantEvent?.type === "text_delta") {
+				responseBuffer += assistantEvent.delta;
 				process.stdout.write(assistantEvent.delta);
 			}
 		}
-		if (event.type === "message_end") {
+		if (event.type === "message_end" && event.message?.role === "assistant") {
+			if (responseBuffer) {
+				sessions.append(sessionKey, {
+					role: "assistant",
+					content: responseBuffer,
+					timestamp: Date.now(),
+				});
+				responseBuffer = "";
+			}
 			console.log("");
 			rl.prompt();
 		}
@@ -106,6 +118,7 @@ export async function resumeCommand(sessionKey: string) {
 				timestamp: Date.now(),
 			});
 
+			responseBuffer = "";
 			process.stdout.write("\nvaman: ");
 			await agent.prompt(input);
 		} catch (err) {

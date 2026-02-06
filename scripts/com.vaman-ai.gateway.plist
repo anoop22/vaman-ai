@@ -8,7 +8,7 @@
 	<array>
 		<string>/usr/local/bin/npx</string>
 		<string>tsx</string>
-		<string>packages/gateway/src/index.ts</string>
+		<string>packages/gateway/src/main.ts</string>
 	</array>
 	<key>WorkingDirectory</key>
 	<string>/Users/anoopsharma/Desktop/vaman-ai</string>

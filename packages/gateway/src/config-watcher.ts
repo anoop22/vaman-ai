@@ -13,6 +13,10 @@ export class ConfigWatcher {
 
 	/** Start watching for config changes */
 	start(): void {
+		if (this.watchPaths.length === 0) {
+			log.info("No config paths to watch, skipping");
+			return;
+		}
 		this.watcher = watch(this.watchPaths, {
 			ignoreInitial: true,
 			awaitWriteFinish: { stabilityThreshold: 500 },
@@ -38,9 +42,9 @@ export class ConfigWatcher {
 	}
 
 	/** Stop watching */
-	stop(): void {
+	async stop(): Promise<void> {
 		if (this.watcher) {
-			this.watcher.close();
+			await this.watcher.close();
 			this.watcher = null;
 			log.info("Config watcher stopped");
 		}

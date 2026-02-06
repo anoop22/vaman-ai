@@ -9,19 +9,22 @@
 		"dev": "tsc --watch",
 		"clean": "rm -rf dist",
 		"test": "vitest run",
-		"start": "tsx src/index.ts"
+		"start": "tsx src/main.ts"
 	},
 	"dependencies": {
 		"@vaman-ai/shared": "*",
 		"@vaman-ai/agent": "*",
 		"@vaman-ai/discord": "*",
 		"@vaman-ai/skills": "*",
+		"@mariozechner/pi-coding-agent": "*",
 		"ws": "^8.18.0",
 		"chokidar": "^4.0.3",
-		"croner": "^9.0.0"
+		"croner": "^9.0.0",
+		"better-sqlite3": "^11.0.0"
 	},
 	"devDependencies": {
 		"@types/ws": "^8.5.14",
+		"@types/better-sqlite3": "^7.6.0",
 		"vitest": "^3.2.4",
 		"tsx": "^4.20.3"
 	}

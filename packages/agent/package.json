@@ -11,8 +11,8 @@
 		"test": "vitest run"
 	},
 	"dependencies": {
-		"@mariozechner/pi-ai": "^0.51.6",
-		"@mariozechner/pi-agent-core": "^0.51.6",
+		"@mariozechner/pi-ai": "^0.52.2",
+		"@mariozechner/pi-agent-core": "^0.52.2",
 		"@vaman-ai/shared": "*"
 	},
 	"devDependencies": {

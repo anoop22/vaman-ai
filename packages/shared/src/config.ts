@@ -28,5 +28,13 @@ export function loadConfig(): VamanConfig {
 			activeHoursEnd: process.env.HEARTBEAT_ACTIVE_END || "22:00",
 			defaultDelivery: process.env.HEARTBEAT_DELIVERY || "discord:dm",
 		},
+		state: {
+			conversationHistory: parseInt(process.env.STATE_CONVERSATION_HISTORY || "10", 10),
+			worldModelPath: process.env.STATE_WORLD_MODEL_PATH || "data/state/world-model.md",
+			archivePath: process.env.STATE_ARCHIVE_PATH || "data/state/archive.db",
+			extractionEnabled: process.env.STATE_EXTRACTION_ENABLED !== "false",
+			extractionTimeoutMs: parseInt(process.env.STATE_EXTRACTION_TIMEOUT_MS || "5000", 10),
+			worldModelMaxTokens: parseInt(process.env.STATE_WORLD_MODEL_MAX_TOKENS || "1000", 10),
+		},
 	};
 }

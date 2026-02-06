@@ -26,6 +26,14 @@ function makeConfig(port = TEST_PORT): VamanConfig {
 			activeHoursEnd: "22:00",
 			defaultDelivery: "discord:dm",
 		},
+		state: {
+			conversationHistory: 10,
+			worldModelPath: "data/state/world-model.md",
+			archivePath: "data/state/archive.db",
+			extractionEnabled: false,
+			extractionTimeoutMs: 5000,
+			worldModelMaxTokens: 1000,
+		},
 	};
 }
 
@@ -35,7 +43,7 @@ describe("GatewayServer", () => {
 
 	beforeEach(async () => {
 		tmpDir = mkdtempSync(join(tmpdir(), "vaman-gw-test-"));
-		server = new GatewayServer({ config: makeConfig(), dataDir: tmpDir });
+		server = new GatewayServer({ config: makeConfig(), dataDir: tmpDir, watchPaths: [] });
 		await server.start();
 	});
 

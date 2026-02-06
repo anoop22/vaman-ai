@@ -1,7 +1,7 @@
 import { Agent } from "@mariozechner/pi-agent-core";
 import type { VamanConfig } from "@vaman-ai/shared";
 import { createLogger } from "@vaman-ai/shared";
-import { resolveProvider, resolveModel, getApiKey, getApiKeyAsync } from "./providers.js";
+import { resolveProvider, resolveModel, getApiKey as getProviderApiKey, getApiKeyAsync } from "./providers.js";
 
 const log = createLogger("agent");
 
@@ -9,14 +9,16 @@ export interface VamanAgentOptions {
 	config: VamanConfig;
 	systemPrompt?: string;
 	tools?: any[];
+	transformContext?: (messages: any[], signal?: AbortSignal) => Promise<any[]>;
 }
 
 export function createVamanAgent(options: VamanAgentOptions): Agent {
-	const { config, systemPrompt, tools } = options;
-	const provider = resolveProvider(config.agent.defaultProvider, config.agent.defaultModel);
-	const model = resolveModel(provider);
+	const { config, systemPrompt, tools, transformContext } = options;
+	const initialProvider = resolveProvider(config.agent.defaultProvider, config.agent.defaultModel);
+	const model = resolveModel(initialProvider);
 
-	log.info(`Creating agent with provider=${provider.name} model=${provider.model}`);
+	log.info(`Creating agent with provider=${initialProvider.name} model=${initialProvider.model}`);
+	log.info(`Model resolved: ${model?.id || "UNDEFINED"}, tools: ${tools?.length || 0}`);
 
 	const agent = new Agent({
 		initialState: {
@@ -24,9 +26,15 @@ export function createVamanAgent(options: VamanAgentOptions): Agent {
 			model,
 			tools: tools || [],
 		},
-		getApiKey: () => provider.isOAuth ? getApiKeyAsync(provider) : getApiKey(provider),
+		// Dynamic: resolves API key based on current config (supports model switching)
+		getApiKey: () => {
+			const p = resolveProvider(config.agent.defaultProvider, config.agent.defaultModel);
+			return p.isOAuth ? getApiKeyAsync(p) : getProviderApiKey(p);
+		},
+		transformContext,
 	});
 
+	log.info(`Agent created, state.model: ${agent.state?.model?.id || "UNDEFINED"}`);
 	return agent;
 }
 

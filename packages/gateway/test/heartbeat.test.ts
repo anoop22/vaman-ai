@@ -19,6 +19,14 @@ function makeConfig(overrides?: Partial<VamanConfig["heartbeat"]>): VamanConfig 
 			defaultDelivery: "discord:dm",
 			...overrides,
 		},
+		state: {
+			conversationHistory: 10,
+			worldModelPath: "data/state/world-model.md",
+			archivePath: "data/state/archive.db",
+			extractionEnabled: false,
+			extractionTimeoutMs: 5000,
+			worldModelMaxTokens: 1000,
+		},
 	};
 }
 

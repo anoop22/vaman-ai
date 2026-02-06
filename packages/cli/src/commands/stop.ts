@@ -7,7 +7,9 @@ const log = createLogger("cli");
 
 export async function stopCommand() {
 	const config = loadConfig();
-	const pidFile = resolve(import.meta.dirname, "../../../data/gateway.pid");
+	// PID file is at monorepo root data/ (must match start.ts)
+	const monorepoRoot = resolve(import.meta.dirname, "../../../..");
+	const pidFile = resolve(monorepoRoot, "data/gateway.pid");
 
 	if (existsSync(pidFile)) {
 		const pid = readFileSync(pidFile, "utf-8").trim();

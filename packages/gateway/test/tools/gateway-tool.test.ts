@@ -20,6 +20,14 @@ function makeConfig(): VamanConfig {
 			activeHoursEnd: "22:00",
 			defaultDelivery: "discord:dm",
 		},
+		state: {
+			conversationHistory: 10,
+			worldModelPath: "data/state/world-model.md",
+			archivePath: "data/state/archive.db",
+			extractionEnabled: false,
+			extractionTimeoutMs: 5000,
+			worldModelMaxTokens: 1000,
+		},
 	};
 }
 
@@ -31,7 +39,7 @@ describe("GatewayTool", () => {
 
 	beforeEach(async () => {
 		tmpDir = mkdtempSync(join(tmpdir(), "vaman-tool-test-"));
-		server = new GatewayServer({ config: makeConfig(), dataDir: tmpDir });
+		server = new GatewayServer({ config: makeConfig(), dataDir: tmpDir, watchPaths: [] });
 		cron = new CronService(tmpDir, {
 			onJobRun: async () => "done",
 			onDeliver: async () => {},

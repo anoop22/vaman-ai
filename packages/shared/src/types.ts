@@ -24,6 +24,14 @@ export interface VamanConfig {
 		activeHoursEnd: string;
 		defaultDelivery: string;
 	};
+	state: {
+		conversationHistory: number;
+		worldModelPath: string;
+		archivePath: string;
+		extractionEnabled: boolean;
+		extractionTimeoutMs: number;
+		worldModelMaxTokens: number;
+	};
 }
 
 export interface SessionKey {

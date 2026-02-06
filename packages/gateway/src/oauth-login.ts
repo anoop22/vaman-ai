@@ -66,9 +66,20 @@ async function loginProvider(providerId: string): Promise<OAuthCredentials> {
 		case "openai-codex":
 			return loginOpenAICodex(callbacks);
 		case "anthropic":
-			return loginAnthropic(callbacks);
+			return loginAnthropic(
+				(url: string) => {
+					console.log("\n=== Open this URL in your browser ===");
+					console.log(url);
+					console.log("=====================================\n");
+				},
+				() => prompt("Paste the authorization code here: "),
+			);
 		case "gemini-cli":
-			return loginGeminiCli(callbacks);
+			return loginGeminiCli(
+				callbacks.onAuth,
+				callbacks.onProgress,
+				callbacks.onManualCodeInput,
+			);
 		default:
 			throw new Error(`Unknown provider: ${providerId}. Available: openai-codex, anthropic, gemini-cli`);
 	}
