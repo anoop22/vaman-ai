@@ -35,6 +35,7 @@ export function loadConfig(): VamanConfig {
 			extractionEnabled: process.env.STATE_EXTRACTION_ENABLED !== "false",
 			extractionTimeoutMs: parseInt(process.env.STATE_EXTRACTION_TIMEOUT_MS || "5000", 10),
 			worldModelMaxTokens: parseInt(process.env.STATE_WORLD_MODEL_MAX_TOKENS || "1000", 10),
+			userTimezone: process.env.USER_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone,
 		},
 	};
 }

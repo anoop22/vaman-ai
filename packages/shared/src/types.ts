@@ -31,6 +31,7 @@ export interface VamanConfig {
 		extractionEnabled: boolean;
 		extractionTimeoutMs: number;
 		worldModelMaxTokens: number;
+		userTimezone: string;
 	};
 }
 

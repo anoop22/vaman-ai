@@ -1,3 +1,4 @@
+import type { VamanConfig } from "@vaman-ai/shared";
 import { createLogger } from "@vaman-ai/shared";
 import type { WorldModelManager } from "./world-model.js";
 import type { SessionBufferManager } from "./session-buffer.js";
@@ -24,6 +25,7 @@ export function createTransformContext(
 	worldModel: WorldModelManager,
 	sessionBuffer: SessionBufferManager,
 	getCurrentSessionKey: () => string,
+	config: VamanConfig,
 ) {
 	return async (messages: any[]): Promise<any[]> => {
 		const sessionKey = getCurrentSessionKey();
@@ -34,11 +36,22 @@ export function createTransformContext(
 
 		const result: any[] = [];
 
-		// 1. World model injection
+		// 1. World model injection with current date/time
 		const wmContent = worldModel.load();
+		const now = new Date();
+		const dateTimeStr = now.toLocaleString("en-US", {
+			timeZone: config.state.userTimezone,
+			weekday: "long",
+			year: "numeric",
+			month: "long",
+			day: "numeric",
+			hour: "numeric",
+			minute: "2-digit",
+			hour12: true,
+		});
 		const wmMessage: UserMessage = {
 			role: "user",
-			content: `<world_model>\n${wmContent}\n</world_model>\n\nThis is your current world model — a living snapshot of what you know. Use it for context. Do not repeat it back.`,
+			content: `<world_model>\nCurrent date & time: ${dateTimeStr}\n\n${wmContent}\n</world_model>\n\nThis is your current world model — a living snapshot of what you know. Use it for context. Do not repeat it back.`,
 			timestamp: Date.now() - 2,
 		};
 

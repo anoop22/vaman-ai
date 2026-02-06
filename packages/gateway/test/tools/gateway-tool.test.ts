@@ -27,6 +27,7 @@ function makeConfig(): VamanConfig {
 			extractionEnabled: false,
 			extractionTimeoutMs: 5000,
 			worldModelMaxTokens: 1000,
+			userTimezone: "America/New_York",
 		},
 	};
 }

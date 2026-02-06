@@ -66,7 +66,7 @@ async function main() {
 	log.info(`Total tools: ${allTools.length} (${codingTools.length} coding + ${archiveTools.length} archive)`);
 
 	// Context assembler — replaces agent's internal message array each LLM call
-	const transformContext = createTransformContext(worldModel, sessionBuffer, () => currentSessionKey);
+	const transformContext = createTransformContext(worldModel, sessionBuffer, () => currentSessionKey, vamanConfig);
 
 	// Create agent with skills, tools, and transformContext
 	const basePrompt = `You are Nova, a personal AI assistant built by Anoop. You chat with your user across Discord, Gmail, terminal, and voice.
