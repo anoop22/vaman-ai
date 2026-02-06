@@ -33,7 +33,7 @@ export function loadConfig(): VamanConfig {
 			worldModelPath: process.env.STATE_WORLD_MODEL_PATH || "data/state/world-model.md",
 			archivePath: process.env.STATE_ARCHIVE_PATH || "data/state/archive.db",
 			extractionEnabled: process.env.STATE_EXTRACTION_ENABLED !== "false",
-			extractionTimeoutMs: parseInt(process.env.STATE_EXTRACTION_TIMEOUT_MS || "5000", 10),
+			extractionTimeoutMs: parseInt(process.env.STATE_EXTRACTION_TIMEOUT_MS || "60000", 10),
 			worldModelMaxTokens: parseInt(process.env.STATE_WORLD_MODEL_MAX_TOKENS || "1000", 10),
 			userTimezone: process.env.USER_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone,
 		},

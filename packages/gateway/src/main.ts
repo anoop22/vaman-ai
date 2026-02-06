@@ -18,6 +18,9 @@ import { DiscordAdapter } from "@vaman-ai/discord";
 import { loadSkills, skillsToSystemPrompt } from "@vaman-ai/skills";
 import { GatewayServer } from "./server.js";
 import { SessionManager } from "./session-manager.js";
+import { HeartbeatRunner } from "./heartbeat.js";
+import { CronService } from "./cron-service.js";
+import { createCronManageTool } from "./tools/cron-manage-tool.js";
 import {
 	WorldModelManager,
 	SessionBufferManager,
@@ -28,6 +31,7 @@ import {
 	createArchiveReadTool,
 	createStateReadTool,
 } from "./state/index.js";
+import { registerApiRoutes } from "./api/index.js";
 
 const log = createLogger("gateway:main");
 
@@ -62,8 +66,55 @@ async function main() {
 		createArchiveReadTool(archive),
 		createStateReadTool(worldModel),
 	];
-	const allTools = [...codingTools, ...archiveTools];
-	log.info(`Total tools: ${allTools.length} (${codingTools.length} coding + ${archiveTools.length} archive)`);
+
+	// ── Proactive systems: Heartbeat & Cron ──
+	// Track last DM user ID for proactive message delivery
+	let lastDMUserId = "";
+
+	// Delivery function — routes proactive messages to Discord channels
+	// Called by heartbeat and cron when they have a response to deliver
+	async function deliverMessage(channel: string, message: string): Promise<void> {
+		if (!discord) {
+			log.warn(`Cannot deliver to ${channel}: Discord not connected`);
+			return;
+		}
+
+		// Parse delivery channel format: "discord:dm", "discord:channel:<id>"
+		if (channel === "discord:dm") {
+			if (!lastDMUserId) {
+				log.warn("Cannot deliver to discord:dm: no DM user known yet");
+				return;
+			}
+			log.info(`Delivering proactive message to DM user ${lastDMUserId}`);
+			await discord.send(`dm:${lastDMUserId}`, { text: message });
+		} else if (channel.startsWith("discord:channel:")) {
+			const channelId = channel.slice("discord:channel:".length);
+			log.info(`Delivering proactive message to channel ${channelId}`);
+			await discord.send(`channel:${channelId}`, { text: message });
+		} else {
+			log.warn(`Unknown delivery channel: ${channel}`);
+		}
+	}
+
+	// Heartbeat — periodic proactive check-ins (reads HEARTBEAT.md)
+	const heartbeat = new HeartbeatRunner({
+		config: vamanConfig,
+		dataDir: dataDir,
+		onHeartbeat: (prompt) => promptAgent(prompt),
+		onDeliver: deliverMessage,
+	});
+
+	// Cron — scheduled jobs (persisted to data/cron/jobs.json)
+	const cron = new CronService(dataDir, {
+		onJobRun: (job) => promptAgent(job.prompt),
+		onDeliver: deliverMessage,
+	});
+
+	// Cron management tool — lets the agent CRUD cron jobs
+	const cronTool = createCronManageTool(cron);
+
+	const allTools = [...codingTools, ...archiveTools, cronTool];
+	log.info(`Total tools: ${allTools.length} (${codingTools.length} coding + ${archiveTools.length} archive + 1 cron)`);
 
 	// Context assembler — replaces agent's internal message array each LLM call
 	const transformContext = createTransformContext(worldModel, sessionBuffer, () => currentSessionKey, vamanConfig);
@@ -105,6 +156,14 @@ IMPORTANT - Gateway self-preservation rules:
 			}
 		}
 		if (event.type === "message_end" && event.message?.role === "assistant") {
+			// Skip tool-call-only messages — wait for the final text response
+			const msg = event.message;
+			const hasText = msg?.content?.some((c: any) => c.type === "text");
+			const hasOnlyToolCalls = !hasText && msg?.content?.some((c: any) => c.type === "toolCall");
+			if (hasOnlyToolCalls) {
+				log.info(`Agent tool call (req#${activeRequest.id}), waiting for text response...`);
+				return;
+			}
 			log.info(`Agent response complete (req#${activeRequest.id}), length: ${activeRequest.buffer.length}`);
 			activeRequest.resolve(activeRequest.buffer);
 			activeRequest = null;
@@ -209,6 +268,36 @@ IMPORTANT - Gateway self-preservation rules:
 	// Start gateway WebSocket server
 	const gateway = new GatewayServer({ config: vamanConfig, dataDir });
 
+	// ── REST API registration (must happen before gateway.start()) ──
+	// Deferred: aliases/fallbacks/switchModel defined below, registered after
+	let apiRegistered = false;
+	function registerApi() {
+		if (apiRegistered) return;
+		apiRegistered = true;
+		registerApiRoutes(gateway.router, {
+			config: vamanConfig,
+			worldModel,
+			sessions,
+			archive,
+			cron,
+			switchModel,
+			loadAliases,
+			saveAliases,
+			loadFallbacks,
+			saveFallbacks,
+			getHealth: () => ({
+				...gateway.getHealth(),
+				model: `${vamanConfig.agent.defaultProvider}/${vamanConfig.agent.defaultModel}`,
+				heartbeat: vamanConfig.heartbeat.enabled,
+				cronJobs: cron.listJobs().length,
+			}),
+			skills,
+			dataDir,
+			builtInDir,
+		});
+		log.info("REST API routes registered");
+	}
+
 	// Model aliases (persisted to data/model-aliases.json)
 	const aliasFile = resolve(dataDir, "model-aliases.json");
 	function loadAliases(): Record<string, string> {
@@ -238,6 +327,9 @@ IMPORTANT - Gateway self-preservation rules:
 		mkdirSync(dirname(fallbackFile), { recursive: true });
 		writeFileSync(fallbackFile, JSON.stringify(list, null, 2), "utf-8");
 	}
+
+	// Register REST API now that all dependencies are available
+	registerApi();
 
 	// Gateway-level command handler (intercepts before agent, zero token cost)
 	const PROVIDER_ENV_MAP: Record<string, { envVar: string; isOAuth?: boolean }> = {
@@ -552,6 +644,10 @@ IMPORTANT - Gateway self-preservation rules:
 				// Set current session key for transformContext
 				currentSessionKey = sessionKey;
 
+				// Track DM user ID for proactive delivery (heartbeat, cron)
+				const dmUserMatch = sessionKey.match(/:dm:(\d+)$/);
+				if (dmUserMatch) lastDMUserId = dmUserMatch[1];
+
 				// Lazy restore: if buffer empty for this session, load from archive
 				if (sessionBuffer.isEmpty(sessionKey)) {
 					const recentTurns = archive.getRecentTurns(sessionKey, vamanConfig.state.conversationHistory);
@@ -648,6 +744,11 @@ IMPORTANT - Gateway self-preservation rules:
 			await discord.start();
 			log.info("Discord adapter started");
 
+			// Start proactive systems now that Discord can deliver messages
+			heartbeat.start();
+			cron.start();
+			log.info("Heartbeat and cron services started");
+
 			// Check for restart sentinel — send "I'm back" after Discord is fully connected
 			const sentinel = gateway.restart.consume();
 			if (sentinel && sentinel.discordTarget) {
@@ -693,6 +794,10 @@ IMPORTANT - Gateway self-preservation rules:
 	// Handle graceful shutdown
 	const shutdown = async () => {
 		log.info("Shutting down gateway...");
+
+		// Stop proactive systems first
+		heartbeat.stop();
+		cron.stop();
 
 		// Flush session buffers to archive before shutdown
 		const allBuffered = sessionBuffer.flushAll();

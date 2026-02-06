@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Vaman Dashboard</title>
+	<link rel="stylesheet" href="/css/dashboard.css">
+	<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+	<script src="/js/ws.js"></script>
+	<script src="/js/api.js"></script>
+	<script src="/js/app.js"></script>
+	<script src="/js/pages/overview.js"></script>
+	<script src="/js/pages/world-model.js"></script>
+	<script src="/js/pages/sessions.js"></script>
+	<script src="/js/pages/cron.js"></script>
+	<script src="/js/pages/model-config.js"></script>
+	<script src="/js/pages/skills.js"></script>
+</head>
+<body>
+	<div class="app" x-data>
+		<!-- Top bar -->
+		<div class="topbar">
+			<div class="topbar-title">Vaman</div>
+			<div class="topbar-status">
+				<span class="status-dot" :class="{ disconnected: !$store.app.wsConnected }"></span>
+				<span x-text="$store.app.wsConnected ? 'Connected' : 'Disconnected'"></span>
+			</div>
+		</div>
+
+		<!-- Navigation -->
+		<nav>
+			<button :class="{ active: $store.app.page === 'overview' }" @click="$store.app.navigate('overview')">Overview</button>
+			<button :class="{ active: $store.app.page === 'world-model' }" @click="$store.app.navigate('world-model')">World Model</button>
+			<button :class="{ active: $store.app.page === 'sessions' }" @click="$store.app.navigate('sessions')">Sessions</button>
+			<button :class="{ active: $store.app.page === 'cron' }" @click="$store.app.navigate('cron')">Cron & Heartbeat</button>
+			<button :class="{ active: $store.app.page === 'model-config' }" @click="$store.app.navigate('model-config')">Model & Config</button>
+			<button :class="{ active: $store.app.page === 'skills' }" @click="$store.app.navigate('skills')">Skills</button>
+		</nav>
+
+		<!-- Page content -->
+		<div class="content">
+
+			<!-- Overview -->
+			<div x-show="$store.app.page === 'overview'" x-data="overviewPage()" x-init="init()">
+				<template x-if="loading">
+					<p style="color: var(--text-dim)">Loading...</p>
+				</template>
+				<template x-if="!loading && health">
+					<div>
+						<div class="cards-grid">
+							<div class="stat-card">
+								<div class="stat-label">Status</div>
+								<div class="stat-value" style="color: var(--success)" x-text="health.status"></div>
+							</div>
+							<div class="stat-card">
+								<div class="stat-label">Uptime</div>
+								<div class="stat-value" x-text="formatUptime(health.uptime)"></div>
+							</div>
+							<div class="stat-card">
+								<div class="stat-label">Model</div>
+								<div class="stat-value" style="font-size: 16px" x-text="health.model || 'unknown'"></div>
+							</div>
+							<div class="stat-card">
+								<div class="stat-label">WS Clients</div>
+								<div class="stat-value" x-text="health.clients"></div>
+							</div>
+							<div class="stat-card">
+								<div class="stat-label">Sessions</div>
+								<div class="stat-value" x-text="health.sessions"></div>
+							</div>
+							<div class="stat-card">
+								<div class="stat-label">Heartbeat</div>
+								<div class="stat-value">
+									<span class="badge" :class="health.heartbeat ? 'badge-success' : 'badge-error'" x-text="health.heartbeat ? 'Active' : 'Off'"></span>
+								</div>
+							</div>
+							<div class="stat-card">
+								<div class="stat-label">Cron Jobs</div>
+								<div class="stat-value" x-text="health.cronJobs"></div>
+							</div>
+						</div>
+					</div>
+				</template>
+			</div>
+
+			<!-- World Model -->
+			<div x-show="$store.app.page === 'world-model'" x-data="worldModelPage()" x-init="$watch('$store.app.page', v => { if (v === 'world-model') init(); })">
+				<div class="card">
+					<div class="flex-between mb-16">
+						<div class="card-title">World Model</div>
+						<button class="btn btn-primary" @click="save()" :disabled="saving" x-text="saving ? 'Saving...' : 'Save'"></button>
+					</div>
+					<textarea x-model="content" rows="20" placeholder="Loading..." style="min-height: 400px"></textarea>
+				</div>
+			</div>
+
+			<!-- Sessions -->
+			<div x-show="$store.app.page === 'sessions'" x-data="sessionsPage()" x-init="$watch('$store.app.page', v => { if (v === 'sessions') init(); })">
+				<template x-if="loading">
+					<p style="color: var(--text-dim)">Loading sessions...</p>
+				</template>
+				<template x-if="!loading">
+					<div class="split-view">
+						<div class="session-list">
+							<template x-for="s in sessions" :key="s.key">
+								<div class="session-item" :class="{ active: selected === s.key }" @click="selectSession(s)">
+									<div class="session-name" x-text="formatSessionName(s.key)"></div>
+									<div class="session-meta">
+										<span x-text="s.messageCount + ' messages'"></span> &middot;
+										<span x-text="timeAgo(s.lastActivity)"></span>
+									</div>
+								</div>
+							</template>
+							<template x-if="sessions.length === 0">
+								<div style="padding: 20px; color: var(--text-dim); text-align: center">No sessions yet</div>
+							</template>
+						</div>
+						<div class="chat-view">
+							<template x-if="!selected">
+								<div style="color: var(--text-dim); text-align: center; margin-top: 40px">Select a session to view conversation</div>
+							</template>
+							<template x-if="loadingChat">
+								<div style="color: var(--text-dim); text-align: center; margin-top: 40px">Loading...</div>
+							</template>
+							<template x-if="selected && !loadingChat">
+								<template x-for="(msg, i) in conversation" :key="i">
+									<div>
+										<div class="chat-msg" :class="msg.role">
+											<span x-text="msg.content"></span>
+										</div>
+										<div class="chat-time" :style="msg.role === 'user' ? 'text-align: right' : ''" x-text="msg.timestamp ? timeAgo(msg.timestamp) : ''"></div>
+									</div>
+								</template>
+							</template>
+						</div>
+					</div>
+				</template>
+			</div>
+
+			<!-- Cron & Heartbeat -->
+			<div x-show="$store.app.page === 'cron'" x-data="cronPage()" x-init="$watch('$store.app.page', v => { if (v === 'cron') init(); })">
+				<template x-if="loading">
+					<p style="color: var(--text-dim)">Loading...</p>
+				</template>
+				<template x-if="!loading">
+					<div>
+						<!-- Heartbeat section -->
+						<div class="card mb-24">
+							<div class="flex-between mb-16">
+								<div class="card-title">Heartbeat</div>
+								<div class="flex gap-8" style="align-items: center">
+									<template x-if="heartbeatConfig">
+										<span class="badge" :class="heartbeatConfig.enabled ? 'badge-success' : 'badge-error'" x-text="heartbeatConfig.enabled ? 'Active' : 'Disabled'"></span>
+									</template>
+									<button class="btn btn-primary btn-sm" @click="saveHeartbeat()" :disabled="savingHeartbeat" x-text="savingHeartbeat ? 'Saving...' : 'Save'"></button>
+								</div>
+							</div>
+							<template x-if="heartbeatConfig">
+								<div class="mb-16" style="font-size: 13px; color: var(--text-dim)">
+									Interval: <span x-text="Math.round(heartbeatConfig.intervalMs / 60000) + ' min'"></span> &middot;
+									Active hours: <span x-text="heartbeatConfig.activeHoursStart + ' - ' + heartbeatConfig.activeHoursEnd"></span> &middot;
+									Delivery: <span x-text="heartbeatConfig.defaultDelivery"></span>
+								</div>
+							</template>
+							<textarea x-model="heartbeatContent" rows="8" placeholder="Heartbeat prompt content..."></textarea>
+						</div>
+
+						<!-- Heartbeat History -->
+						<div class="card mb-24">
+							<div class="flex-between mb-16">
+								<div class="card-title">Heartbeat History</div>
+								<button class="btn btn-sm" @click="loadHeartbeatRuns()" :disabled="loadingRuns" x-text="loadingRuns ? 'Loading...' : 'Refresh'"></button>
+							</div>
+							<template x-if="heartbeatRuns.length === 0 && !loadingRuns">
+								<p style="color: var(--text-dim); font-size: 13px">No heartbeat runs recorded yet.</p>
+							</template>
+							<template x-if="heartbeatRuns.length > 0">
+								<div style="display: flex; flex-direction: column; gap: 8px">
+									<template x-for="(run, idx) in heartbeatRuns" :key="idx">
+										<div style="background: var(--bg-input); padding: 12px; border-radius: var(--radius); cursor: pointer" @click="toggleRun(idx)">
+											<div class="flex-between" style="align-items: center; gap: 12px">
+												<div style="display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1">
+													<span class="badge" :class="run.success ? 'badge-success' : 'badge-error'" x-text="run.success ? 'OK' : 'Error'" style="flex-shrink: 0"></span>
+													<span style="font-size: 13px; color: var(--text-dim); flex-shrink: 0" x-text="timeAgo(run.timestamp)"></span>
+													<span style="font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0" x-text="run.success ? truncate(run.response, 100) : truncate(run.error, 100)"></span>
+												</div>
+												<span style="font-size: 11px; color: var(--text-dim); flex-shrink: 0" x-text="run.delivery"></span>
+											</div>
+											<template x-if="expandedRun === idx">
+												<pre style="margin-top: 8px; white-space: pre-wrap; font-size: 12px; max-height: 300px; overflow-y: auto; background: var(--bg-card); padding: 8px; border-radius: var(--radius)" x-text="run.success ? run.response : run.error"></pre>
+											</template>
+										</div>
+									</template>
+								</div>
+							</template>
+						</div>
+
+						<!-- Cron Jobs section -->
+						<div class="card">
+							<div class="flex-between mb-16">
+								<div class="card-title">Cron Jobs</div>
+								<button class="btn btn-sm" @click="showAddForm = !showAddForm" x-text="showAddForm ? 'Cancel' : '+ Add Job'"></button>
+							</div>
+
+							<!-- Add form -->
+							<template x-if="showAddForm">
+								<div class="mb-16" style="background: var(--bg-input); padding: 16px; border-radius: var(--radius)">
+									<div class="flex gap-8 mb-16" style="flex-wrap: wrap">
+										<div style="flex: 1; min-width: 150px">
+											<label>Name</label>
+											<input x-model="newJob.name" placeholder="Job name">
+										</div>
+										<div style="flex: 0 0 120px">
+											<label>Type</label>
+											<select x-model="newJob.scheduleType">
+												<option value="every">Every</option>
+												<option value="cron">Cron</option>
+												<option value="at">At</option>
+											</select>
+										</div>
+										<div style="flex: 1; min-width: 150px">
+											<label>Schedule</label>
+											<input x-model="newJob.schedule" placeholder="e.g. 30m, 0 9 * * *">
+										</div>
+									</div>
+									<div class="mb-16">
+										<label>Prompt</label>
+										<textarea x-model="newJob.prompt" rows="3" placeholder="What should the agent do?"></textarea>
+									</div>
+									<div class="flex gap-8" style="align-items: flex-end">
+										<div style="flex: 1">
+											<label>Delivery</label>
+											<input x-model="newJob.delivery" placeholder="discord:dm">
+										</div>
+										<button class="btn btn-primary" @click="addJob()">Add Job</button>
+									</div>
+								</div>
+							</template>
+
+							<!-- Jobs table -->
+							<template x-if="jobs.length > 0">
+								<table>
+									<thead>
+										<tr>
+											<th>Name</th>
+											<th>Schedule</th>
+											<th>Prompt</th>
+											<th>Delivery</th>
+											<th></th>
+										</tr>
+									</thead>
+									<tbody>
+										<template x-for="job in jobs" :key="job.id">
+											<tr>
+												<td x-text="job.name"></td>
+												<td><span class="badge badge-info" x-text="job.scheduleType + ': ' + job.schedule"></span></td>
+												<td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap" x-text="job.prompt"></td>
+												<td x-text="job.delivery"></td>
+												<td><button class="btn btn-danger btn-sm" @click="removeJob(job.id)">Remove</button></td>
+											</tr>
+										</template>
+									</tbody>
+								</table>
+							</template>
+							<template x-if="jobs.length === 0">
+								<div style="color: var(--text-dim); text-align: center; padding: 20px">No cron jobs configured</div>
+							</template>
+						</div>
+					</div>
+				</template>
+			</div>
+
+			<!-- Model & Config -->
+			<div x-show="$store.app.page === 'model-config'" x-data="modelConfigPage()" x-init="$watch('$store.app.page', v => { if (v === 'model-config') init(); })">
+				<template x-if="loading">
+					<p style="color: var(--text-dim)">Loading...</p>
+				</template>
+				<template x-if="!loading">
+					<div>
+						<!-- Current Model -->
+						<div class="card mb-24">
+							<div class="card-title">Current Model</div>
+							<div style="font-size: 20px; font-weight: 600; margin-bottom: 16px" x-text="model ? model.current : 'unknown'"></div>
+							<div class="flex gap-8">
+								<input x-model="newModelRef" placeholder="provider/model" style="max-width: 300px" @keydown.enter="switchModel()">
+								<button class="btn btn-primary" @click="switchModel()">Switch</button>
+							</div>
+						</div>
+
+						<!-- Aliases -->
+						<div class="card mb-24">
+							<div class="card-title">Model Aliases</div>
+							<template x-if="Object.keys(aliases).length > 0">
+								<table class="mb-16">
+									<thead><tr><th>Alias</th><th>Target</th><th></th></tr></thead>
+									<tbody>
+										<template x-for="name in Object.keys(aliases)" :key="name">
+											<tr>
+												<td class="mono" x-text="name"></td>
+												<td class="mono" x-text="aliases[name]"></td>
+												<td><button class="btn btn-danger btn-sm" @click="removeAlias(name)">Remove</button></td>
+											</tr>
+										</template>
+									</tbody>
+								</table>
+							</template>
+							<div class="flex gap-8">
+								<input x-model="newAliasName" placeholder="alias name" style="max-width: 150px">
+								<input x-model="newAliasTarget" placeholder="provider/model">
+								<button class="btn btn-sm" @click="addAlias()">Add</button>
+							</div>
+						</div>
+
+						<!-- Fallbacks -->
+						<div class="card mb-24">
+							<div class="card-title">Fallback Chain</div>
+							<template x-if="fallbacks.length > 0">
+								<div class="mb-16">
+									<template x-for="(fb, i) in fallbacks" :key="i">
+										<div class="flex-between" style="padding: 8px 0; border-bottom: 1px solid var(--border)">
+											<span><span style="color: var(--text-dim)" x-text="(i+1) + '.'"></span> <span class="mono" x-text="fb"></span></span>
+											<button class="btn btn-danger btn-sm" @click="removeFallback(i)">Remove</button>
+										</div>
+									</template>
+								</div>
+							</template>
+							<div class="flex gap-8">
+								<input x-model="newFallback" placeholder="provider/model" @keydown.enter="addFallback()">
+								<button class="btn btn-sm" @click="addFallback()">Add</button>
+							</div>
+						</div>
+
+						<!-- Config viewer -->
+						<div class="card">
+							<div class="card-title">Configuration (read-only)</div>
+							<pre class="config-view" x-text="config ? JSON.stringify(config, null, 2) : 'Loading...'"></pre>
+						</div>
+					</div>
+				</template>
+			</div>
+
+			<!-- Skills -->
+			<div x-show="$store.app.page === 'skills'" x-data="skillsPage()" x-init="$watch('$store.app.page', v => { if (v === 'skills') init(); })">
+				<template x-if="loading">
+					<p style="color: var(--text-dim)">Loading skills...</p>
+				</template>
+				<template x-if="!loading">
+					<div>
+						<!-- Restart notice -->
+						<div class="card mb-24" style="border-left: 3px solid var(--warning, #f59e0b); padding: 12px 16px">
+							<span style="color: var(--warning, #f59e0b); font-weight: 500">Note:</span>
+							<span style="color: var(--text-dim)"> Changes to skills require a gateway restart to take effect.</span>
+						</div>
+
+						<!-- Header with Add button -->
+						<div class="flex-between mb-16">
+							<div style="font-size: 16px; font-weight: 600">Skills</div>
+							<button class="btn btn-sm" @click="showAddForm = !showAddForm" x-text="showAddForm ? 'Cancel' : '+ Add Skill'"></button>
+						</div>
+
+						<!-- Add form -->
+						<template x-if="showAddForm">
+							<div class="card mb-24">
+								<div class="card-title">New Skill</div>
+								<div class="mb-16">
+									<label>Name</label>
+									<input x-model="newSkill.name" placeholder="my-skill">
+								</div>
+								<div class="mb-16">
+									<label>Description</label>
+									<input x-model="newSkill.description" placeholder="Use when...">
+								</div>
+								<div class="mb-16">
+									<label>Content (Markdown)</label>
+									<textarea x-model="newSkill.content" rows="10" placeholder="# Skill Instructions&#10;&#10;Write the skill content here..."></textarea>
+								</div>
+								<button class="btn btn-primary" @click="addSkill()" :disabled="saving || !newSkill.name" x-text="saving ? 'Creating...' : 'Create Skill'"></button>
+							</div>
+						</template>
+
+						<!-- Split view: skill list + detail -->
+						<div class="split-view" style="height: calc(100vh - 280px)">
+							<!-- Skill list -->
+							<div class="session-list">
+								<template x-for="s in skills" :key="s.name">
+									<div class="session-item" :class="{ active: selected && selected.name === s.name }" @click="selectSkill(s)">
+										<div class="flex-between">
+											<div class="session-name" x-text="s.name"></div>
+											<span class="badge" :class="s.type === 'built-in' ? 'badge-info' : 'badge-success'" x-text="s.type" style="font-size: 11px"></span>
+										</div>
+										<div class="session-meta" x-text="s.description"></div>
+									</div>
+								</template>
+								<template x-if="skills.length === 0">
+									<div style="padding: 20px; color: var(--text-dim); text-align: center">No skills found</div>
+								</template>
+							</div>
+
+							<!-- Detail/edit panel -->
+							<div class="chat-view" style="flex-direction: column; gap: 0">
+								<template x-if="!selected && !loadingSkill">
+									<div style="color: var(--text-dim); text-align: center; margin-top: 40px">Select a skill to view details</div>
+								</template>
+								<template x-if="loadingSkill">
+									<div style="color: var(--text-dim); text-align: center; margin-top: 40px">Loading...</div>
+								</template>
+								<template x-if="selected && !loadingSkill">
+									<div style="display: flex; flex-direction: column; height: 100%; overflow: hidden">
+										<!-- Header -->
+										<div class="flex-between" style="padding: 0 0 12px 0; border-bottom: 1px solid var(--border); margin-bottom: 12px; flex-shrink: 0">
+											<div>
+												<div style="font-size: 16px; font-weight: 600" x-text="selected.name"></div>
+												<div style="font-size: 13px; color: var(--text-dim)" x-text="selected.description"></div>
+											</div>
+											<div class="flex gap-8">
+												<span class="badge" :class="selected.type === 'built-in' ? 'badge-info' : 'badge-success'" x-text="selected.type"></span>
+												<template x-if="selected.type === 'user' && !editing">
+													<button class="btn btn-sm" @click="startEdit()">Edit</button>
+												</template>
+												<template x-if="selected.type === 'user' && !editing">
+													<button class="btn btn-danger btn-sm" @click="deleteSkill(selected.name)">Delete</button>
+												</template>
+											</div>
+										</div>
+
+										<!-- View mode -->
+										<template x-if="!editing">
+											<pre class="config-view" style="flex: 1; overflow-y: auto; margin: 0" x-text="selected.content"></pre>
+										</template>
+
+										<!-- Edit mode -->
+										<template x-if="editing">
+											<div style="flex: 1; display: flex; flex-direction: column; gap: 12px; overflow-y: auto">
+												<div>
+													<label>Name</label>
+													<input x-model="editBuffer.name">
+												</div>
+												<div>
+													<label>Description</label>
+													<input x-model="editBuffer.description">
+												</div>
+												<div style="flex: 1; display: flex; flex-direction: column">
+													<label>Content</label>
+													<textarea x-model="editBuffer.content" style="flex: 1; min-height: 200px"></textarea>
+												</div>
+												<div class="flex gap-8">
+													<button class="btn btn-primary" @click="saveEdit()" :disabled="saving" x-text="saving ? 'Saving...' : 'Save'"></button>
+													<button class="btn" @click="cancelEdit()">Cancel</button>
+												</div>
+											</div>
+										</template>
+									</div>
+								</template>
+							</div>
+						</div>
+					</div>
+				</template>
+			</div>
+
+		</div>
+
+		<!-- Toast -->
+		<template x-if="$store.app.toast">
+			<div class="toast" :class="$store.app.toast.type" x-text="$store.app.toast.message"></div>
+		</template>
+	</div>
+</body>
+</html>

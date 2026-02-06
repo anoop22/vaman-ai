@@ -1,7 +1,16 @@
-import { readFileSync, writeFileSync, existsSync } from "fs";
-import { resolve } from "path";
+import { readFileSync, writeFileSync, existsSync, appendFileSync, mkdirSync } from "fs";
+import { resolve, dirname } from "path";
 import { createLogger } from "@vaman-ai/shared";
 import type { VamanConfig } from "@vaman-ai/shared";
+
+export interface HeartbeatRunRecord {
+	timestamp: number;
+	completedAt: number;
+	success: boolean;
+	delivery: string;
+	response?: string;
+	error?: string;
+}
 
 const log = createLogger("heartbeat");
 
@@ -15,9 +24,12 @@ export interface HeartbeatOptions {
 export class HeartbeatRunner {
 	private interval: ReturnType<typeof setInterval> | null = null;
 	private heartbeatPath: string;
+	private runsPath: string;
 
 	constructor(private options: HeartbeatOptions) {
 		this.heartbeatPath = resolve(options.dataDir, "heartbeat", "HEARTBEAT.md");
+		this.runsPath = resolve(options.dataDir, "heartbeat", "runs.jsonl");
+		mkdirSync(dirname(this.runsPath), { recursive: true });
 	}
 
 	/** Start the heartbeat loop */
@@ -58,14 +70,27 @@ export class HeartbeatRunner {
 		}
 
 		log.info("Heartbeat triggered, running agent...");
+		const startedAt = Date.now();
+		const delivery = this.options.config.heartbeat.defaultDelivery;
 
 		try {
 			const response = await this.options.onHeartbeat(content);
-			const delivery = this.options.config.heartbeat.defaultDelivery;
 			await this.options.onDeliver(delivery, response);
 			log.info(`Heartbeat delivered to ${delivery}`);
+			this.logRun({ timestamp: startedAt, completedAt: Date.now(), success: true, delivery, response });
 		} catch (err) {
+			const error = err instanceof Error ? err.message : String(err);
 			log.error("Heartbeat error:", err);
+			this.logRun({ timestamp: startedAt, completedAt: Date.now(), success: false, delivery, error });
+		}
+	}
+
+	/** Log a heartbeat run result to JSONL */
+	private logRun(record: HeartbeatRunRecord): void {
+		try {
+			appendFileSync(this.runsPath, JSON.stringify(record) + "\n", "utf-8");
+		} catch (err) {
+			log.error("Failed to log heartbeat run:", err);
 		}
 	}
 
