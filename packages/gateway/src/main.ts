@@ -68,8 +68,9 @@ async function main() {
 	];
 
 	// ── Proactive systems: Heartbeat & Cron ──
-	// Track last DM user ID for proactive message delivery
+	// Track last DM user/session for proactive message delivery & session integration
 	let lastDMUserId = "";
+	let lastDMSessionKey = "";
 
 	// Delivery function — routes proactive messages to Discord channels
 	// Called by heartbeat and cron when they have a response to deliver
@@ -97,10 +98,63 @@ async function main() {
 	}
 
 	// Heartbeat — periodic proactive check-ins (reads HEARTBEAT.md)
+	// Runs inside the DM session so the agent has conversation context and
+	// the exchange gets logged, buffered, and extracted like a normal message.
 	const heartbeat = new HeartbeatRunner({
 		config: vamanConfig,
 		dataDir: dataDir,
-		onHeartbeat: (prompt) => promptAgent(prompt),
+		onHeartbeat: async (prompt) => {
+			const sk = lastDMSessionKey;
+			if (!sk) {
+				log.warn("Heartbeat: no DM session key yet, running without session context");
+				return promptAgent(prompt);
+			}
+
+			// Set session context so transformContext injects world model + buffer
+			currentSessionKey = sk;
+
+			// Lazy restore session buffer from archive if empty
+			if (sessionBuffer.isEmpty(sk)) {
+				const recentTurns = archive.getRecentTurns(sk, vamanConfig.state.conversationHistory);
+				if (recentTurns.length > 0) {
+					sessionBuffer.restore(sk, recentTurns.reverse().map((t) => ({
+						role: t.role as "user" | "assistant",
+						content: t.content,
+						timestamp: t.timestamp,
+						sessionKey: t.sessionKey,
+					})));
+					log.info(`Heartbeat: restored ${recentTurns.length} turns for ${sk}`);
+				}
+			}
+
+			// Append heartbeat prompt as a user turn
+			const now = Date.now();
+			sessions.append(sk, { role: "user", content: prompt, timestamp: now });
+			const userEvicted = sessionBuffer.append(sk, {
+				role: "user", content: prompt, timestamp: now, sessionKey: sk,
+			});
+			if (userEvicted.length > 0) archive.archiveTurns(userEvicted);
+
+			// Get agent response
+			const response = await promptAgent(prompt);
+
+			// Append assistant turn
+			const assistantNow = Date.now();
+			sessions.append(sk, { role: "assistant", content: response, timestamp: assistantNow });
+			const assistantEvicted = sessionBuffer.append(sk, {
+				role: "assistant", content: response, timestamp: assistantNow, sessionKey: sk,
+			});
+			if (assistantEvicted.length > 0) archive.archiveTurns(assistantEvicted);
+
+			// Fire extraction so the world model updates from heartbeat exchanges
+			extractor.extract({
+				userMessage: prompt,
+				assistantResponse: response,
+				sessionKey: sk,
+			});
+
+			return response;
+		},
 		onDeliver: deliverMessage,
 	});
 
@@ -644,9 +698,12 @@ IMPORTANT - Gateway self-preservation rules:
 				// Set current session key for transformContext
 				currentSessionKey = sessionKey;
 
-				// Track DM user ID for proactive delivery (heartbeat, cron)
+				// Track DM user ID + session key for proactive delivery & session integration
 				const dmUserMatch = sessionKey.match(/:dm:(\d+)$/);
-				if (dmUserMatch) lastDMUserId = dmUserMatch[1];
+				if (dmUserMatch) {
+					lastDMUserId = dmUserMatch[1];
+					lastDMSessionKey = sessionKey;
+				}
 
 				// Lazy restore: if buffer empty for this session, load from archive
 				if (sessionBuffer.isEmpty(sessionKey)) {
