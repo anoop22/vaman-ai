@@ -2,10 +2,13 @@ node_modules/
 dist/
 .env
 config/credentials/
+data/oauth/
 data/sessions/
+data/state/
 data/reports/
 data/podcasts/
 data/cron/runs/
 data/logs/
+data/uploads/
 *.log
 .DS_Store
