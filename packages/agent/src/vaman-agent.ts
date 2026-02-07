@@ -25,6 +25,7 @@ export function createVamanAgent(options: VamanAgentOptions): Agent {
 			systemPrompt: systemPrompt || getDefaultSystemPrompt(),
 			model,
 			tools: tools || [],
+			thinkingLevel: "medium",
 		},
 		// Dynamic: resolves API key based on current config (supports model switching)
 		getApiKey: () => {

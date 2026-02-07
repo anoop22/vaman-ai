@@ -6,4 +6,8 @@ export function registerHealthRoutes(router: HttpRouter, ctx: ApiContext): void 
 	router.get("/api/health", async (_req, res) => {
 		sendJson(res, ctx.getHealth());
 	});
+
+	router.get("/api/status", async (_req, res) => {
+		sendJson(res, ctx.getStatus());
+	});
 }

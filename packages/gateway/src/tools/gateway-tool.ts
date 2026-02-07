@@ -1,99 +1,81 @@
+import { spawnSync } from "child_process";
+import { Type } from "@sinclair/typebox";
+import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { createLogger } from "@vaman-ai/shared";
-import type { GatewayServer } from "../server.js";
-import type { CronService, CronJob } from "../cron-service.js";
+import type { RestartManager } from "../restart-sentinel.js";
 
 const log = createLogger("gateway-tool");
 
-export interface GatewayToolAction {
-	action: string;
-	params?: Record<string, unknown>;
-}
-
-export interface GatewayToolResult {
-	success: boolean;
-	data?: unknown;
-	error?: string;
+export interface GatewayRestartToolOpts {
+	restartManager: RestartManager;
+	getCurrentSessionKey: () => string;
+	getDiscordTarget: () => string;
 }
 
 /**
- * Gateway tool allows the agent to manage the gateway itself.
- * Actions: restart, config.get, config.patch, cron.add, cron.remove, cron.list, health
+ * AgentTool that lets Nova restart the gateway process.
+ * Writes a restart sentinel (so the new process confirms back in chat),
+ * then schedules a systemctl restart after a configurable delay.
  */
-export class GatewayTool {
-	constructor(
-		private server: GatewayServer,
-		private cron: CronService,
-	) {}
+export function createGatewayRestartTool(opts: GatewayRestartToolOpts): AgentTool<any> {
+	const schema = Type.Object({
+		reason: Type.String({
+			description: "Why the restart is needed (e.g. 'applied code changes to heartbeat.ts')",
+		}),
+		delayMs: Type.Optional(Type.Number({
+			description: "Delay before restart in ms (default: 2000). Allows current response to finish sending.",
+		})),
+	});
 
-	async execute(action: GatewayToolAction): Promise<GatewayToolResult> {
-		log.debug(`Executing action: ${action.action}`);
+	return {
+		name: "gateway_restart",
+		label: "gateway_restart",
+		description:
+			"Restart the gateway process. Use this after making code changes, " +
+			"adding/editing skills, or when you need to reload configuration. " +
+			"The gateway will restart via systemctl and you will automatically " +
+			"confirm back in the chat once online.\n\n" +
+			"IMPORTANT: Call this LAST in your response — the process will " +
+			"terminate shortly after. Any tool calls after this will be lost.",
+		parameters: schema,
+		execute: async (_toolCallId, params) => {
+			const sessionKey = opts.getCurrentSessionKey();
+			const discordTarget = opts.getDiscordTarget();
+			const reason = params.reason || "Agent-requested restart";
+			const delayMs = typeof params.delayMs === "number" ? params.delayMs : 2000;
 
-		switch (action.action) {
-			case "health":
-				return { success: true, data: this.server.getHealth() };
+			// Write sentinel so the new process knows to wake in this session
+			opts.restartManager.write({
+				reason,
+				timestamp: Date.now(),
+				sessionKey,
+				discordTarget,
+			});
 
-			case "config.get":
-				return { success: true, data: this.server.getConfig() };
+			log.info(`Restart scheduled in ${delayMs}ms. Reason: ${reason}`);
 
-			case "config.patch": {
-				if (!action.params) {
-					return { success: false, error: "Missing params for config.patch" };
+			// Schedule restart after delay so the agent's response can be sent first
+			setTimeout(() => {
+				log.info("Executing systemctl restart...");
+				try {
+					spawnSync("systemctl", ["--user", "restart", "vaman-gateway.service"], {
+						encoding: "utf-8",
+						timeout: 5000,
+					});
+				} catch (err) {
+					// If we get here, systemd likely killed us — that's expected
+					log.error(`Restart spawn error (may be expected): ${err}`);
 				}
-				this.server.updateConfig(action.params as any);
-				return { success: true, data: "Config updated" };
-			}
+			}, delayMs);
 
-			case "restart": {
-				const reason = (action.params?.reason as string) || "Agent-requested restart";
-				log.info(`Restart requested: ${reason}`);
-				const result = this.server.restart.triggerRestart({
-					reason,
-					timestamp: Date.now(),
-					sessionKey: action.params?.session as string,
-					discordTarget: action.params?.discordTarget as string,
-				});
-				if (result.ok) {
-					return { success: true, data: "Gateway restart triggered via systemctl. New process will start shortly." };
-				}
-				return { success: false, error: `Restart failed: ${result.detail}` };
-			}
-
-			case "cron.list":
-				return { success: true, data: this.cron.listJobs() };
-
-			case "cron.add": {
-				const p = action.params;
-				if (!p?.name || !p?.scheduleType || !p?.schedule || !p?.prompt) {
-					return {
-						success: false,
-						error: "Missing required params: name, scheduleType, schedule, prompt",
-					};
-				}
-				const job = this.cron.addJob({
-					name: p.name as string,
-					scheduleType: p.scheduleType as CronJob["scheduleType"],
-					schedule: p.schedule as string,
-					prompt: p.prompt as string,
-					delivery: (p.delivery as string) || "discord:dm",
-					enabled: p.enabled !== false,
-				});
-				return { success: true, data: job };
-			}
-
-			case "cron.remove": {
-				const id = action.params?.id as string;
-				if (!id) {
-					return { success: false, error: "Missing job id" };
-				}
-				const removed = this.cron.removeJob(id);
-				return {
-					success: removed,
-					data: removed ? "Job removed" : "Job not found",
-				};
-			}
-
-			default:
-				return { success: false, error: `Unknown action: ${action.action}` };
-		}
-	}
+			return {
+				content: [{
+					type: "text",
+					text: `Gateway restart scheduled in ${delayMs}ms. Reason: ${reason}. ` +
+						`I will confirm back in this chat once I'm online again.`,
+				}],
+				details: undefined,
+			};
+		},
+	};
 }

@@ -14,7 +14,27 @@ export function registerHeartbeatRoutes(router: HttpRouter, ctx: ApiContext): vo
 			activeHoursStart: ctx.config.heartbeat.activeHoursStart,
 			activeHoursEnd: ctx.config.heartbeat.activeHoursEnd,
 			defaultDelivery: ctx.config.heartbeat.defaultDelivery,
+			heartbeatModel: ctx.getHeartbeatModel(),
 		});
+	});
+
+	router.get("/api/heartbeat/model", async (_req, res) => {
+		sendJson(res, ctx.getHeartbeatModel());
+	});
+
+	router.put("/api/heartbeat/model", async (req, res) => {
+		const body = await parseBody<{ ref?: string | null; clear?: boolean }>(req);
+		const requested = body.clear ? null : (body.ref ?? null);
+		if (requested !== null && (typeof requested !== "string" || requested.trim().length === 0)) {
+			sendError(res, 400, "Invalid 'ref' (must be non-empty string or null)");
+			return;
+		}
+		const result = ctx.setHeartbeatModel(requested);
+		if (!result.ok) {
+			sendError(res, 400, result.error || "Failed to update heartbeat model");
+			return;
+		}
+		sendJson(res, { ok: true, ...ctx.getHeartbeatModel() });
 	});
 
 	router.get("/api/heartbeat/content", async (_req, res) => {

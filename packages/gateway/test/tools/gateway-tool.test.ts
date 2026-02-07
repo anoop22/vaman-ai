@@ -1,112 +1,78 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync } from "fs";
+import { mkdtempSync, rmSync, readFileSync, existsSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { GatewayTool } from "../../src/tools/gateway-tool.js";
-import { GatewayServer } from "../../src/server.js";
-import { CronService } from "../../src/cron-service.js";
-import type { VamanConfig } from "@vaman-ai/shared";
+import { createGatewayRestartTool, type GatewayRestartToolOpts } from "../../src/tools/gateway-tool.js";
+import { RestartManager } from "../../src/restart-sentinel.js";
 
-function makeConfig(): VamanConfig {
-	return {
-		gateway: { port: 18798, host: "127.0.0.1" },
-		agent: { defaultModel: "test", defaultProvider: "test" },
-		discord: { token: "", enabled: false },
-		gmail: { credentialsPath: "", address: "", enabled: false, pollIntervalMs: 60000 },
-		heartbeat: {
-			enabled: false,
-			intervalMs: 1800000,
-			activeHoursStart: "08:00",
-			activeHoursEnd: "22:00",
-			defaultDelivery: "discord:dm",
-		},
-		state: {
-			conversationHistory: 10,
-			worldModelPath: "data/state/world-model.md",
-			archivePath: "data/state/archive.db",
-			extractionEnabled: false,
-			extractionTimeoutMs: 5000,
-			worldModelMaxTokens: 1000,
-			userTimezone: "America/New_York",
-		},
-	};
-}
-
-describe("GatewayTool", () => {
+describe("createGatewayRestartTool", () => {
 	let tmpDir: string;
-	let server: GatewayServer;
-	let cron: CronService;
-	let tool: GatewayTool;
+	let restartManager: RestartManager;
 
-	beforeEach(async () => {
+	beforeEach(() => {
 		tmpDir = mkdtempSync(join(tmpdir(), "vaman-tool-test-"));
-		server = new GatewayServer({ config: makeConfig(), dataDir: tmpDir, watchPaths: [] });
-		cron = new CronService(tmpDir, {
-			onJobRun: async () => "done",
-			onDeliver: async () => {},
-		});
-		tool = new GatewayTool(server, cron);
+		restartManager = new RestartManager(tmpDir);
 	});
 
-	afterEach(async () => {
-		cron.stop();
+	afterEach(() => {
 		rmSync(tmpDir, { recursive: true, force: true });
 	});
 
-	it("returns health info", async () => {
-		const result = await tool.execute({ action: "health" });
-		expect(result.success).toBe(true);
-		expect((result.data as any).status).toBe("ok");
-	});
-
-	it("returns config", async () => {
-		const result = await tool.execute({ action: "config.get" });
-		expect(result.success).toBe(true);
-		expect((result.data as any).gateway.port).toBe(18798);
-	});
-
-	it("lists cron jobs", async () => {
-		const result = await tool.execute({ action: "cron.list" });
-		expect(result.success).toBe(true);
-		expect(Array.isArray(result.data)).toBe(true);
-	});
-
-	it("adds a cron job", async () => {
-		const result = await tool.execute({
-			action: "cron.add",
-			params: {
-				name: "Test Cron",
-				scheduleType: "cron",
-				schedule: "0 9 * * *",
-				prompt: "morning check",
-				delivery: "discord:dm",
-				enabled: false,
-			},
+	function makeTool(overrides?: Partial<GatewayRestartToolOpts>) {
+		return createGatewayRestartTool({
+			restartManager,
+			getCurrentSessionKey: () => "discord:guild:dm:123456",
+			getDiscordTarget: () => "dm:123456",
+			...overrides,
 		});
-		expect(result.success).toBe(true);
-		expect((result.data as any).name).toBe("Test Cron");
+	}
+
+	it("has correct name and label", () => {
+		const tool = makeTool();
+		expect(tool.name).toBe("gateway_restart");
+		expect(tool.label).toBe("gateway_restart");
 	});
 
-	it("removes a cron job", async () => {
-		const addResult = await tool.execute({
-			action: "cron.add",
-			params: {
-				name: "To Remove",
-				scheduleType: "cron",
-				schedule: "0 * * * *",
-				prompt: "test",
-				enabled: false,
-			},
-		});
-		const jobId = (addResult.data as any).id;
+	it("writes restart sentinel on execute", async () => {
+		const tool = makeTool();
+		vi.useFakeTimers();
 
-		const result = await tool.execute({ action: "cron.remove", params: { id: jobId } });
-		expect(result.success).toBe(true);
+		const result = await tool.execute("call-1", { reason: "test restart" });
+
+		const text = (result.content[0] as { type: "text"; text: string }).text;
+		expect(text).toContain("Gateway restart scheduled");
+		expect(text).toContain("test restart");
+
+		// Verify sentinel was written (read the file directly, don't consume)
+		const sentinelPath = join(tmpDir, "restart-sentinel.json");
+		expect(existsSync(sentinelPath)).toBe(true);
+		const sentinel = JSON.parse(readFileSync(sentinelPath, "utf-8"));
+		expect(sentinel.reason).toBe("test restart");
+		expect(sentinel.sessionKey).toBe("discord:guild:dm:123456");
+		expect(sentinel.discordTarget).toBe("dm:123456");
+
+		vi.useRealTimers();
 	});
 
-	it("returns error for unknown action", async () => {
-		const result = await tool.execute({ action: "unknown" });
-		expect(result.success).toBe(false);
-		expect(result.error).toContain("Unknown action");
+	it("uses default delay of 2000ms", async () => {
+		const tool = makeTool();
+		vi.useFakeTimers();
+
+		const result = await tool.execute("call-2", { reason: "default delay" });
+		const text = (result.content[0] as { type: "text"; text: string }).text;
+		expect(text).toContain("2000ms");
+
+		vi.useRealTimers();
+	});
+
+	it("respects custom delayMs", async () => {
+		const tool = makeTool();
+		vi.useFakeTimers();
+
+		const result = await tool.execute("call-3", { reason: "custom delay", delayMs: 5000 });
+		const text = (result.content[0] as { type: "text"; text: string }).text;
+		expect(text).toContain("5000ms");
+
+		vi.useRealTimers();
 	});
 });

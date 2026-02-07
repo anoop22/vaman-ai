@@ -21,6 +21,7 @@ import { SessionManager } from "./session-manager.js";
 import { HeartbeatRunner } from "./heartbeat.js";
 import { CronService } from "./cron-service.js";
 import { createCronManageTool } from "./tools/cron-manage-tool.js";
+import { createGatewayRestartTool } from "./tools/gateway-tool.js";
 import {
 	WorldModelManager,
 	SessionBufferManager,
@@ -103,6 +104,7 @@ async function main() {
 	const heartbeat = new HeartbeatRunner({
 		config: vamanConfig,
 		dataDir: dataDir,
+		getModelRef: () => getHeartbeatModel().current,
 		onHeartbeat: async (prompt) => {
 			const sk = lastDMSessionKey;
 			if (!sk) {
@@ -135,25 +137,48 @@ async function main() {
 			});
 			if (userEvicted.length > 0) archive.archiveTurns(userEvicted);
 
-			// Get agent response
-			const response = await promptAgent(prompt);
+			// Swap to heartbeat-specific model if override is set
+			const hbOverride = loadHeartbeatModel();
+			const primaryProvider = vamanConfig.agent.defaultProvider;
+			const primaryModel = vamanConfig.agent.defaultModel;
+			let swapped = false;
 
-			// Append assistant turn
-			const assistantNow = Date.now();
-			sessions.append(sk, { role: "assistant", content: response, timestamp: assistantNow });
-			const assistantEvicted = sessionBuffer.append(sk, {
-				role: "assistant", content: response, timestamp: assistantNow, sessionKey: sk,
-			});
-			if (assistantEvicted.length > 0) archive.archiveTurns(assistantEvicted);
+			if (hbOverride) {
+				try {
+					swapped = switchModel(hbOverride);
+					if (swapped) log.info(`Heartbeat: using override model ${hbOverride}`);
+				} catch (err) {
+					log.warn(`Heartbeat: failed to switch to ${hbOverride}, using global model: ${err}`);
+				}
+			}
 
-			// Fire extraction so the world model updates from heartbeat exchanges
-			extractor.extract({
-				userMessage: prompt,
-				assistantResponse: response,
-				sessionKey: sk,
-			});
+			try {
+				// Get agent response
+				const response = await promptAgent(prompt);
 
-			return response;
+				// Append assistant turn
+				const assistantNow = Date.now();
+				sessions.append(sk, { role: "assistant", content: response, timestamp: assistantNow });
+				const assistantEvicted = sessionBuffer.append(sk, {
+					role: "assistant", content: response, timestamp: assistantNow, sessionKey: sk,
+				});
+				if (assistantEvicted.length > 0) archive.archiveTurns(assistantEvicted);
+
+				// Fire extraction so the world model updates from heartbeat exchanges
+				extractor.extract({
+					userMessage: prompt,
+					assistantResponse: response,
+					sessionKey: sk,
+				});
+
+				return response;
+			} finally {
+				// Always restore global model after heartbeat
+				if (swapped) {
+					try { switchModel(`${primaryProvider}/${primaryModel}`); }
+					catch (err) { log.error(`Failed to restore primary model after heartbeat: ${err}`); }
+				}
+			}
 		},
 		onDeliver: deliverMessage,
 	});
@@ -167,8 +192,8 @@ async function main() {
 	// Cron management tool — lets the agent CRUD cron jobs
 	const cronTool = createCronManageTool(cron);
 
+	// Tools array — gateway_restart is pushed later after gateway is created
 	const allTools = [...codingTools, ...archiveTools, cronTool];
-	log.info(`Total tools: ${allTools.length} (${codingTools.length} coding + ${archiveTools.length} archive + 1 cron)`);
 
 	// Context assembler — replaces agent's internal message array each LLM call
 	const transformContext = createTransformContext(worldModel, sessionBuffer, () => currentSessionKey, vamanConfig);
@@ -182,10 +207,11 @@ You have a world model that tracks what you know about your user — it's automa
 
 Your source code is at ${workspaceDir}. You can use your tools to read files, run commands, edit code, and explore the filesystem.
 
-IMPORTANT - Gateway self-preservation rules:
-- NEVER use the bash tool to run commands that would kill or restart the gateway process (systemctl restart/stop vaman-gateway, kill, pkill, or similar)
-- If the user asks to restart the gateway, tell them to use the /restart command which handles it safely
-- You ARE the gateway process — killing it kills you mid-response and the user gets no reply`;
+Gateway management:
+- To restart the gateway, use the gateway_restart tool — NEVER use bash to kill/restart the process directly
+- After restarting, you will automatically come back online and confirm in the chat
+- Use gateway_restart after making code changes, adding/editing skills, or when configuration needs reloading
+- You ARE the gateway process — using bash to kill it would kill you mid-response with no reply`;
 
 	const agent = createVamanAgent({
 		config: vamanConfig,
@@ -210,12 +236,14 @@ IMPORTANT - Gateway self-preservation rules:
 			}
 		}
 		if (event.type === "message_end" && event.message?.role === "assistant") {
-			// Skip tool-call-only messages — wait for the final text response
+			// Only resolve when the message has actual text content.
+			// Skip messages with only thinking blocks, tool calls, or any combo without text —
+			// the agent loop will continue and eventually produce a text response.
 			const msg = event.message;
 			const hasText = msg?.content?.some((c: any) => c.type === "text");
-			const hasOnlyToolCalls = !hasText && msg?.content?.some((c: any) => c.type === "toolCall");
-			if (hasOnlyToolCalls) {
-				log.info(`Agent tool call (req#${activeRequest.id}), waiting for text response...`);
+			if (!hasText) {
+				const types = msg?.content?.map((c: any) => c.type).join(", ") || "none";
+				log.info(`Agent non-text message (req#${activeRequest.id}) [${types}], waiting for text...`);
 				return;
 			}
 			log.info(`Agent response complete (req#${activeRequest.id}), length: ${activeRequest.buffer.length}`);
@@ -322,6 +350,120 @@ IMPORTANT - Gateway self-preservation rules:
 	// Start gateway WebSocket server
 	const gateway = new GatewayServer({ config: vamanConfig, dataDir });
 
+	// Gateway restart tool — lets the agent restart itself
+	const gatewayRestartTool = createGatewayRestartTool({
+		restartManager: gateway.restart,
+		getCurrentSessionKey: () => currentSessionKey,
+		getDiscordTarget: () => {
+			const parts = currentSessionKey.split(":");
+			return parts.slice(2).join(":");
+		},
+	});
+
+	allTools.push(gatewayRestartTool);
+	log.info(`Total tools: ${allTools.length} (${codingTools.length} coding + ${archiveTools.length} archive + 1 cron + 1 gateway)`);
+
+	// ── Status data builder ──
+	const startedAt = Date.now();
+
+	function getStatus(): object {
+		const health = gateway.getHealth();
+		const uptimeSec = process.uptime();
+		const model = `${vamanConfig.agent.defaultProvider}/${vamanConfig.agent.defaultModel}`;
+		const thinkingLevel = agent.state?.thinkingLevel || "off";
+		const fallbacks = loadFallbacks();
+		const aliases = loadAliases();
+		const cronJobs = cron.listJobs();
+		const sessionList = sessions.list();
+		const worldModelContent = worldModel.load();
+		const heartbeatContent = heartbeat.readHeartbeat();
+		const heartbeatActive = heartbeat.isActiveHours();
+
+		// Last heartbeat run (read last line of runs.jsonl)
+		let lastHeartbeatRun: any = null;
+		try {
+			const runsPath = resolve(dataDir, "heartbeat", "runs.jsonl");
+			if (existsSync(runsPath)) {
+				const lines = readFileSync(runsPath, "utf-8").trim().split("\n").filter(Boolean);
+				if (lines.length > 0) {
+					lastHeartbeatRun = JSON.parse(lines[lines.length - 1]);
+				}
+			}
+		} catch {}
+
+		return {
+			// Core
+			status: "ok",
+			version: "0.1.0",
+			node: process.versions.node,
+			platform: `${process.platform} ${process.arch}`,
+			startedAt,
+			uptime: uptimeSec,
+
+			// Gateway
+			gateway: {
+				host: vamanConfig.gateway.host,
+				port: vamanConfig.gateway.port,
+				clients: (health as any).clients,
+			},
+
+			// Model
+			model: {
+				current: model,
+				thinkingLevel,
+				fallbacks,
+				aliases,
+			},
+
+			// Channels
+			channels: {
+				discord: {
+					enabled: vamanConfig.discord.enabled,
+					connected: !!discord,
+				},
+				gmail: {
+					enabled: vamanConfig.gmail.enabled,
+				},
+			},
+
+			// Heartbeat
+			heartbeat: {
+				enabled: vamanConfig.heartbeat.enabled,
+				intervalMs: vamanConfig.heartbeat.intervalMs,
+				activeHours: `${vamanConfig.heartbeat.activeHoursStart}-${vamanConfig.heartbeat.activeHoursEnd}`,
+				currentlyActive: heartbeatActive,
+				hasContent: !!heartbeatContent,
+				delivery: vamanConfig.heartbeat.defaultDelivery,
+				lastRun: lastHeartbeatRun,
+			},
+
+			// Cron
+			cron: {
+				jobCount: cronJobs.length,
+				jobs: cronJobs.map((j) => ({ name: j.name, schedule: j.schedule, enabled: j.enabled })),
+			},
+
+			// Sessions
+			sessions: {
+				count: sessionList.length,
+				recent: sessionList.slice(0, 5),
+			},
+
+			// State
+			state: {
+				worldModelChars: worldModelContent.length,
+				conversationHistory: vamanConfig.state.conversationHistory,
+				extractionEnabled: vamanConfig.state.extractionEnabled,
+			},
+
+			// Skills
+			skills: {
+				count: skills.length,
+				names: skills.map((s) => s.name),
+			},
+		};
+	}
+
 	// ── REST API registration (must happen before gateway.start()) ──
 	// Deferred: aliases/fallbacks/switchModel defined below, registered after
 	let apiRegistered = false;
@@ -345,6 +487,9 @@ IMPORTANT - Gateway self-preservation rules:
 				heartbeat: vamanConfig.heartbeat.enabled,
 				cronJobs: cron.listJobs().length,
 			}),
+			getStatus,
+			getHeartbeatModel,
+			setHeartbeatModel,
 			skills,
 			dataDir,
 			builtInDir,
@@ -380,6 +525,39 @@ IMPORTANT - Gateway self-preservation rules:
 	function saveFallbacks(list: string[]): void {
 		mkdirSync(dirname(fallbackFile), { recursive: true });
 		writeFileSync(fallbackFile, JSON.stringify(list, null, 2), "utf-8");
+	}
+
+	// Heartbeat model override (persisted to data/heartbeat/model.json)
+	const heartbeatModelFile = resolve(dataDir, "heartbeat", "model.json");
+	function loadHeartbeatModel(): string | null {
+		try {
+			if (existsSync(heartbeatModelFile)) {
+				const data = JSON.parse(readFileSync(heartbeatModelFile, "utf-8"));
+				return data.ref || null;
+			}
+		} catch {}
+		return null;
+	}
+	function saveHeartbeatModel(ref: string | null): void {
+		mkdirSync(dirname(heartbeatModelFile), { recursive: true });
+		writeFileSync(heartbeatModelFile, JSON.stringify({ ref }, null, 2), "utf-8");
+	}
+	function getHeartbeatModel(): { override: string | null; current: string; inherited: boolean } {
+		const override = loadHeartbeatModel();
+		const globalModel = `${vamanConfig.agent.defaultProvider}/${vamanConfig.agent.defaultModel}`;
+		return { override, current: override || globalModel, inherited: override === null };
+	}
+	function setHeartbeatModel(ref: string | null): { ok: boolean; error?: string } {
+		if (ref === null) {
+			saveHeartbeatModel(null);
+			return { ok: true };
+		}
+		const resolved = resolveAlias(ref) || ref;
+		if (!resolved.includes("/")) {
+			return { ok: false, error: `Invalid model ref: "${resolved}" (must be provider/model)` };
+		}
+		saveHeartbeatModel(resolved);
+		return { ok: true };
 	}
 
 	// Register REST API now that all dependencies are available
@@ -621,6 +799,62 @@ IMPORTANT - Gateway self-preservation rules:
 			return `Thinking level set to **${arg}**`;
 		}
 
+		// /status - show comprehensive gateway status
+		const statusMatch = trimmed.match(/^\/?(status)$/i);
+		if (statusMatch) {
+			const s = getStatus() as any;
+			const uptimeStr = formatUptime(s.uptime);
+			const fallbackStr = s.model.fallbacks.length > 0
+				? s.model.fallbacks.join(", ")
+				: "none";
+			const aliasEntries = Object.entries(s.model.aliases as Record<string, string>);
+			const aliasStr = aliasEntries.length > 0
+				? aliasEntries.map(([k, v]) => `${k}->${v}`).join(", ")
+				: "none";
+			const hbStatus = !s.heartbeat.enabled
+				? "disabled"
+				: s.heartbeat.currentlyActive
+					? `active (every ${Math.round(s.heartbeat.intervalMs / 60000)}m)`
+					: "outside active hours";
+			const lastRunStr = s.heartbeat.lastRun
+				? `${s.heartbeat.lastRun.success ? "\u2713" : "\u2717"} ${formatAge(Date.now() - s.heartbeat.lastRun.completedAt)}`
+				: "never";
+			const cronStr = s.cron.jobCount > 0
+				? s.cron.jobs.map((j: any) => j.name).join(", ")
+				: "none";
+
+			const lines = [
+				`**Nova Status**`,
+				``,
+				`**System**`,
+				`  Version: ${s.version} \u00b7 Node ${s.node} \u00b7 ${s.platform}`,
+				`  Uptime: ${uptimeStr}`,
+				`  Gateway: ws://${s.gateway.host}:${s.gateway.port} (${s.gateway.clients} clients)`,
+				``,
+				`**Model**`,
+				`  Current: **${s.model.current}**`,
+				`  Thinking: ${s.model.thinkingLevel}`,
+				`  Fallbacks: ${fallbackStr}`,
+				`  Aliases: ${aliasStr}`,
+				``,
+				`**Channels**`,
+				`  Discord: ${s.channels.discord.connected ? "\u2713 connected" : "\u2717 disconnected"}`,
+				`  Gmail: ${s.channels.gmail.enabled ? "\u2713 enabled" : "\u2717 disabled"}`,
+				``,
+				`**Heartbeat**`,
+				`  Status: ${hbStatus}`,
+				`  Hours: ${s.heartbeat.activeHours}`,
+				`  Last run: ${lastRunStr}`,
+				`  Content: ${s.heartbeat.hasContent ? "configured" : "empty"}`,
+				``,
+				`**Cron**: ${s.cron.jobCount} jobs (${cronStr})`,
+				`**Sessions**: ${s.sessions.count}`,
+				`**World Model**: ${(s.state.worldModelChars / 1000).toFixed(1)}k chars`,
+				`**Skills**: ${s.skills.count} (${s.skills.names.join(", ")})`,
+			];
+			return lines.join("\n");
+		}
+
 		// /restart - restart gateway via systemctl (survives because systemd relaunches the process)
 		const restartMatch = trimmed.match(/^\/?(restart)$/i);
 		if (restartMatch) {
@@ -628,6 +862,24 @@ IMPORTANT - Gateway self-preservation rules:
 		}
 
 		return null; // not a command
+	}
+
+	function formatUptime(seconds: number): string {
+		const d = Math.floor(seconds / 86400);
+		const h = Math.floor((seconds % 86400) / 3600);
+		const m = Math.floor((seconds % 3600) / 60);
+		if (d > 0) return `${d}d ${h}h ${m}m`;
+		if (h > 0) return `${h}h ${m}m`;
+		return `${m}m`;
+	}
+
+	function formatAge(ms: number): string {
+		const mins = Math.floor(ms / 60000);
+		if (mins < 1) return "just now";
+		if (mins < 60) return `${mins}m ago`;
+		const hours = Math.floor(mins / 60);
+		if (hours < 24) return `${hours}h ago`;
+		return `${Math.floor(hours / 24)}d ago`;
 	}
 
 	/** Handle /restart command with session context for sentinel wake */
@@ -671,6 +923,10 @@ IMPORTANT - Gateway self-preservation rules:
 					description: "Set thinking/reasoning level",
 					options: [{ name: "level", description: "off, minimal, low, medium, high, xhigh", required: false }],
 				},
+				{
+					name: "status",
+					description: "Show gateway status, model, channels, heartbeat, and sessions",
+				},
 			],
 			onSlashCommand: async (commandName, args, sessionKey) => {
 				if (commandName === "models") {
@@ -689,6 +945,9 @@ IMPORTANT - Gateway self-preservation rules:
 				if (commandName === "think") {
 					const content = args.level ? `/think ${args.level}` : "/think";
 					return handleCommand(content) ?? "Unknown error";
+				}
+				if (commandName === "status") {
+					return handleCommand("/status") ?? "Unknown error";
 				}
 				return `Unknown command: /${commandName}`;
 			},
@@ -806,39 +1065,83 @@ IMPORTANT - Gateway self-preservation rules:
 			cron.start();
 			log.info("Heartbeat and cron services started");
 
-			// Check for restart sentinel — send "I'm back" after Discord is fully connected
+			// Check for restart sentinel — confirm back in chat via the agent
 			const sentinel = gateway.restart.consume();
 			if (sentinel && sentinel.discordTarget) {
-				// Eagerly restore session buffer from archive for the sentinel's session
-				if (sentinel.sessionKey && sessionBuffer.isEmpty(sentinel.sessionKey)) {
-					const recentTurns = archive.getRecentTurns(sentinel.sessionKey, vamanConfig.state.conversationHistory);
-					if (recentTurns.length > 0) {
-						sessionBuffer.restore(sentinel.sessionKey, recentTurns.reverse().map((t) => ({
-							role: t.role as "user" | "assistant",
-							content: t.content,
-							timestamp: t.timestamp,
-							sessionKey: t.sessionKey,
-						})));
-						log.info(`Sentinel recovery: restored ${recentTurns.length} turns for ${sentinel.sessionKey}`);
-					}
-				}
+				const sentinelWake = async () => {
+					// Wait for Discord to be fully connected
+					await new Promise((r) => setTimeout(r, 1500));
 
-				const sendSentinelWake = async () => {
-					for (let i = 0; i < 20; i++) {
-						try {
-							const elapsed = Date.now() - sentinel.timestamp;
-							const seconds = Math.round(elapsed / 1000);
-							const msg = `Gateway restarted successfully (${seconds}s). Reason: ${sentinel.reason}`;
-							log.info(`Sentinel wake: sending to ${sentinel.discordTarget}`);
-							await discord!.send(sentinel.discordTarget!, { text: msg });
-							return;
-						} catch {
-							await new Promise((r) => setTimeout(r, 500));
+					const sk = sentinel.sessionKey || "";
+					if (sk) {
+						currentSessionKey = sk;
+						// Also restore DM tracking so heartbeat/proactive features work
+						const dmMatch = sk.match(/:dm:(\d+)$/);
+						if (dmMatch) {
+							lastDMUserId = dmMatch[1];
+							lastDMSessionKey = sk;
 						}
 					}
-					log.error("Sentinel wake: failed after retries, Discord never connected");
+
+					// Eagerly restore session buffer from archive for conversation context
+					if (sk && sessionBuffer.isEmpty(sk)) {
+						const recentTurns = archive.getRecentTurns(sk, vamanConfig.state.conversationHistory);
+						if (recentTurns.length > 0) {
+							sessionBuffer.restore(sk, recentTurns.reverse().map((t) => ({
+								role: t.role as "user" | "assistant",
+								content: t.content,
+								timestamp: t.timestamp,
+								sessionKey: t.sessionKey,
+							})));
+							log.info(`Sentinel recovery: restored ${recentTurns.length} turns for ${sk}`);
+						}
+					}
+
+					const elapsed = Date.now() - sentinel.timestamp;
+					const seconds = Math.round(elapsed / 1000);
+					const systemPrompt = `[SYSTEM] Gateway restarted successfully after ${seconds}s. ` +
+						`Reason: ${sentinel.reason}. ` +
+						`Confirm to the user that you are back online. If you remember what you ` +
+						`were doing before the restart, briefly mention it.`;
+
+					log.info(`Sentinel wake: sending through agent for ${sentinel.discordTarget}`);
+
+					try {
+						// Send through agent so it has conversation context and responds naturally
+						const now = Date.now();
+						if (sk) {
+							sessions.append(sk, { role: "user", content: systemPrompt, timestamp: now });
+							const userEvicted = sessionBuffer.append(sk, {
+								role: "user", content: systemPrompt, timestamp: now, sessionKey: sk,
+							});
+							if (userEvicted.length > 0) archive.archiveTurns(userEvicted);
+						}
+
+						const response = await promptAgent(systemPrompt);
+
+						if (sk) {
+							const assistantNow = Date.now();
+							sessions.append(sk, { role: "assistant", content: response, timestamp: assistantNow });
+							const assistantEvicted = sessionBuffer.append(sk, {
+								role: "assistant", content: response, timestamp: assistantNow, sessionKey: sk,
+							});
+							if (assistantEvicted.length > 0) archive.archiveTurns(assistantEvicted);
+						}
+
+						await discord!.send(sentinel.discordTarget!, { text: response });
+						log.info("Sentinel wake: agent confirmed restart in chat");
+					} catch (err) {
+						// Fallback: send raw message if agent fails
+						log.error(`Sentinel wake agent failed: ${err}, sending raw message`);
+						const fallback = `Gateway restarted successfully (${seconds}s). Reason: ${sentinel.reason}`;
+						try {
+							await discord!.send(sentinel.discordTarget!, { text: fallback });
+						} catch {
+							log.error("Sentinel wake: failed to send even raw fallback");
+						}
+					}
 				};
-				sendSentinelWake();
+				sentinelWake();
 			}
 		} catch (err) {
 			log.error(`Discord adapter failed to start: ${err}`);

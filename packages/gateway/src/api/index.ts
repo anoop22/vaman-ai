@@ -28,6 +28,9 @@ export interface ApiContext {
 	loadFallbacks: () => string[];
 	saveFallbacks: (l: string[]) => void;
 	getHealth: () => object;
+	getStatus: () => object;
+	getHeartbeatModel: () => { override: string | null; current: string; inherited: boolean };
+	setHeartbeatModel: (ref: string | null) => { ok: boolean; error?: string };
 	skills: Skill[];
 	dataDir: string;
 	builtInDir: string;
