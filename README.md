@@ -1,6 +1,6 @@
 # Vaman AI
 
-A lightweight personal AI assistant with Discord, Gmail, CLI, and voice interfaces. Built on [OpenClaw](https://github.com/openclaw/openclaw)'s agentic CLI framework and [pi-mono](https://github.com/badlogic/pi-mono)'s multi-provider LLM harness.
+A lightweight personal AI assistant with Discord, Gmail, CLI, and voice interfaces. Built on [OpenClaw](https://github.com/openclaw/openclaw)'s multi-channel gateway architecture and [pi-mono](https://github.com/badlogic/pi-mono)'s multi-provider agent runtime.
 
 ## Features
 
@@ -116,9 +116,9 @@ npm run check        # Lint + typecheck
 
 Vaman AI stands on the shoulders of two excellent open-source projects:
 
-- **[OpenClaw](https://github.com/openclaw/openclaw)** by Peter Steinberger (MIT License) — The original agentic CLI framework whose architecture inspired Vaman's gateway, session management, and tool system. Thank you for building such a clean, extensible foundation.
+- **[OpenClaw](https://github.com/openclaw/openclaw)** by Peter Steinberger (MIT License) — A personal AI assistant platform with a local WebSocket gateway that routes conversations across 12+ messaging channels (Discord, WhatsApp, Telegram, etc.) with session management, skills, and device node integration. Vaman's gateway architecture, multi-channel routing, session model, and skills system are built on OpenClaw's foundation. Thank you for pioneering the local-first personal AI assistant.
 
-- **[pi-mono](https://github.com/badlogic/pi-mono)** by Mario Zechner (MIT License) — The agentic harness and multi-provider LLM abstraction that powers Vaman's agent core. Thank you for making multi-model AI agents accessible and practical.
+- **[pi-mono](https://github.com/badlogic/pi-mono)** by Mario Zechner (MIT License) — An AI agent toolkit providing a unified multi-provider LLM interface (`pi-ai` supporting OpenAI, Anthropic, Google) and an agent runtime (`pi-agent-core` with tool integration and state management). Vaman's agent core and multi-provider model support are powered by pi-mono. Thank you for making multi-model AI agents accessible and practical.
 
 Both projects are licensed under the MIT License. Their original copyright notices are preserved in `THIRD-PARTY-LICENSES`.
 
