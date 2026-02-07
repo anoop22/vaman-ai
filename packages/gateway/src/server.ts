@@ -160,11 +160,19 @@ export class GatewayServer {
 
 	/** Serve static files with SPA fallback */
 	private serveStatic(pathname: string, res: ServerResponse): void {
-		const requestedPath = pathname === "/" ? "index.html" : pathname.slice(1);
+		// Reject path traversal attempts before resolving
+		const decoded = decodeURIComponent(pathname);
+		if (decoded.includes("..") || decoded.includes("\0")) {
+			res.writeHead(403, { "Content-Type": "text/plain" });
+			res.end("Forbidden");
+			return;
+		}
+
+		const requestedPath = decoded === "/" ? "index.html" : decoded.slice(1);
 		const filePath = resolve(this.publicDir, requestedPath);
 
-		// Path traversal prevention
-		if (!filePath.startsWith(this.publicDir)) {
+		// Normalized path must still be under publicDir
+		if (!filePath.startsWith(this.publicDir + "/") && filePath !== this.publicDir) {
 			res.writeHead(403, { "Content-Type": "text/plain" });
 			res.end("Forbidden");
 			return;
