@@ -1,6 +1,6 @@
 # Vaman AI
 
-A lightweight personal AI assistant with Discord, Gmail, CLI, and voice interfaces. Built on [pi-mono](https://github.com/mariozechner/pi-mono)'s agentic harness with multi-provider LLM support.
+A lightweight personal AI assistant with Discord, Gmail, CLI, and voice interfaces. Built on [OpenClaw](https://github.com/openclaw/openclaw)'s agentic CLI framework and [pi-mono](https://github.com/badlogic/pi-mono)'s multi-provider LLM harness.
 
 ## Features
 
