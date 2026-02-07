@@ -45,8 +45,10 @@ export class HeartbeatRunner {
 		log.info(`Heartbeat started (interval: ${config.heartbeat.intervalMs}ms)`);
 		this.interval = setInterval(() => this.tick(), config.heartbeat.intervalMs);
 
-		// Also run once at startup
-		this.tick();
+		// Delay first tick to let Discord connect and establish DM session key
+		const startupDelay = 30_000; // 30 seconds
+		log.info(`First heartbeat in ${startupDelay / 1000}s (waiting for channels to connect)`);
+		setTimeout(() => this.tick(), startupDelay);
 	}
 
 	/** Stop the heartbeat loop */
