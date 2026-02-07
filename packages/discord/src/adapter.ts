@@ -3,6 +3,8 @@ import {
 	type Message as DiscordMessage, type ChatInputCommandInteraction,
 } from "discord.js";
 import { createLogger, type ChannelAdapter, type ChannelHealth, type OutboundMessage } from "@vaman-ai/shared";
+import { writeFile, mkdir } from "node:fs/promises";
+import { resolve } from "node:path";
 
 const log = createLogger("discord");
 
@@ -20,6 +22,22 @@ export interface DiscordAdapterOptions {
 	onSlashCommand?: (commandName: string, args: Record<string, string>, sessionKey: string) => Promise<string>;
 	slashCommands?: SlashCommandDef[];
 	allowedUsers?: string[];
+	uploadDir?: string;
+}
+
+async function downloadAttachment(url: string, name: string, uploadDir: string): Promise<string> {
+	await mkdir(uploadDir, { recursive: true });
+	const timestamp = Date.now();
+	const safeName = name.replace(/[^a-zA-Z0-9._-]/g, "_");
+	const filename = `${timestamp}-${safeName}`;
+	const filepath = resolve(uploadDir, filename);
+
+	const response = await fetch(url);
+	if (!response.ok) throw new Error(`Failed to download ${name}: HTTP ${response.status}`);
+	const buffer = Buffer.from(await response.arrayBuffer());
+	await writeFile(filepath, buffer);
+
+	return filepath;
 }
 
 export class DiscordAdapter implements ChannelAdapter {
@@ -144,7 +162,26 @@ export class DiscordAdapter implements ChannelAdapter {
 			const typingInterval = setInterval(sendTyping, 8000);
 
 			try {
-				await this.options.onMessage(sessionKey, message.content, message.id);
+				// Download attachments and append file paths to content
+				let fullContent = message.content;
+
+				if (message.attachments.size > 0 && this.options.uploadDir) {
+					for (const [, att] of message.attachments) {
+						try {
+							const filepath = await downloadAttachment(
+								att.url, att.name, this.options.uploadDir,
+							);
+							const sizeKB = (att.size / 1024).toFixed(1);
+							fullContent += `\n[Attached file: ${filepath} (name: ${att.name}, type: ${att.contentType || "unknown"}, size: ${sizeKB}KB)]`;
+							log.info(`Downloaded attachment: ${att.name} (${sizeKB}KB) → ${filepath}`);
+						} catch (err) {
+							log.error(`Failed to download attachment ${att.name}: ${err}`);
+							fullContent += `\n[Attachment failed: ${att.name} — download error]`;
+						}
+					}
+				}
+
+				await this.options.onMessage(sessionKey, fullContent, message.id);
 			} catch (err) {
 				log.error("Message handler error:", err);
 			} finally {

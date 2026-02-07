@@ -75,6 +75,13 @@ Store in `someday-maybe.md`. Reviewed during weekly review to see if anything sh
 
 Read/update `routines.md`. Routines are recurring commitments (daily, weekly, as-needed) that reset on their cycle. The agent resets daily checkboxes each morning and weekly checkboxes each Monday. During heartbeat, check if time-appropriate routines are done.
 
+**Completing things:**
+> "I finished the auth module project"
+> "The design doc from John came through"
+> "Done with the RAG evaluation suite"
+
+When a project is completed, move it from `areas.md` to `completed.md` with the completion date. Same for resolved waiting-for items, finished someday/maybe items, or retired areas. This keeps active lists clean and builds a record of accomplishment.
+
 ### Example Interactions
 
 | User says | You do |
@@ -90,6 +97,8 @@ Read/update `routines.md`. Routines are recurring commitments (daily, weekly, as
 | "Did I exercise?" | Read `routines.md`, check exercise item |
 | "Morning routine" | Read `routines.md` morning section, show status |
 | "Add X to routine" | Append to appropriate section in `routines.md` |
+| "Finished project X" | Move from `areas.md` to `completed.md` with date |
+| "What have I accomplished?" | Read `completed.md`, summarize |
 
 ---
 
@@ -105,6 +114,7 @@ All live state is stored in `data/gtd/`. You read and write these files using yo
 | `data/gtd/waiting-for.md` | Items delegated or waiting on others |
 | `data/gtd/someday-maybe.md` | Parked ideas for future consideration |
 | `data/gtd/routines.md` | Recurring daily/weekly commitments with checkboxes |
+| `data/gtd/completed.md` | Archive of finished projects, resolved items, retired areas |
 | `data/gtd/weekly-review.md` | Review checklist and last review notes |
 
 ### File Formats
@@ -112,8 +122,8 @@ All live state is stored in `data/gtd/`. You read and write these files using yo
 **inbox.md:**
 ```
 # Inbox
-- [ ] Item description (captured: 2026-02-06)
-- [ ] Another item (captured: 2026-02-06)
+- [ ] Item description (captured: 2026-02-07 16:00)
+- [ ] Another item (captured: 2026-02-07 09:30)
 ```
 
 **areas.md:**
@@ -122,7 +132,7 @@ All live state is stored in `data/gtd/`. You read and write these files using yo
 
 ## Career
 ### Active Projects
-- **Project Name** — Brief description
+- **Project Name** — Brief description (created: 2026-02-01 10:00)
   - Next action: specific next step
   - Status: in progress / waiting / planning
 ### Reference Notes
@@ -137,27 +147,27 @@ All live state is stored in `data/gtd/`. You read and write these files using yo
 # Next Actions
 
 ## @computer
-- [ ] Draft the API spec for auth module (Career > Auth Project)
-- [ ] Review PR #42 (Career > Vaman-AI)
+- [ ] Draft the API spec for auth module (Career > Auth Project) (added: 2026-02-05 14:00)
+- [x] Review PR #42 (Career > Vaman-AI) (added: 2026-02-06 09:00, done: 2026-02-07 11:30)
 
 ## @phone
-- [ ] Call dentist to schedule cleaning (Health)
+- [ ] Call dentist to schedule cleaning (Health) (added: 2026-02-07 08:00)
 
 ## @errands
-- [ ] Pick up package from post office (Family)
+- [ ] Pick up package from post office (Family) (added: 2026-02-06 16:00)
 
 ## @home
-- [ ] Fix the kitchen faucet (Family > Home Maintenance)
+- [ ] Fix the kitchen faucet (Family > Home Maintenance) (added: 2026-02-03 10:00)
 
 ## @anywhere
-- [ ] Brainstorm podcast topics (AI > Podcast Project)
+- [ ] Brainstorm podcast topics (AI > Podcast Project) (added: 2026-02-04 13:00)
 ```
 
 **waiting-for.md:**
 ```
 # Waiting For
-- [ ] Design doc from John — waiting on: John (since: 2026-02-01)
-- [ ] API access approval — waiting on: IT team (since: 2026-02-03)
+- [ ] Design doc from John — waiting on: John (since: 2026-02-01 14:00)
+- [ ] API access approval — waiting on: IT team (since: 2026-02-03 09:00)
 ```
 
 **someday-maybe.md:**
@@ -192,6 +202,30 @@ All live state is stored in `data/gtd/`. You read and write these files using yo
 
 Checkboxes reset: daily items reset each morning, weekly items reset each Monday.
 Agent checks items off when user reports completion. During heartbeat, nudge unchecked time-appropriate routines.
+
+**completed.md:**
+```
+# Completed
+
+## Projects
+- **Auth Module** (Career) — created: 2026-01-15 09:00, completed: 2026-02-07 16:30 (23 days)
+- **RAG Evaluation Suite** (AI) — created: 2026-01-10 11:00, completed: 2026-01-28 14:00 (18 days)
+
+## Next Actions (Done)
+- Review PR #42 (Career > Vaman-AI) — added: 2026-02-06 09:00, done: 2026-02-07 11:30
+- Draft meeting agenda (Career) — added: 2026-02-07 08:00, done: 2026-02-07 08:15
+
+## Waiting-For (Resolved)
+- Design doc from John — since: 2026-02-01 14:00, resolved: 2026-02-05 10:00 (4 days)
+
+## Someday/Maybe (Done)
+- Blog series on AI agents — parked: 2026-01-05, completed: 2026-02-01 17:00
+
+## Retired Areas
+- **Freelance Consulting** — retired: 2026-01-15 12:00, reason: focused full-time on career
+```
+
+When completing items, remove from the active file and append to completed.md with timestamps. For projects, calculate duration (days between created and completed).
 
 **weekly-review.md:**
 ```
@@ -235,6 +269,15 @@ Item from inbox
 ```
 
 Always ask the user to clarify if the area or context isn't obvious.
+
+### Timestamp Rule
+
+**Every mutation gets a timestamp** in `YYYY-MM-DD HH:MM` format (user's local timezone):
+- Creating an item → `(captured: ...)`, `(created: ...)`, `(added: ...)`
+- Completing an item → `(done: ...)`, `(completed: ...)`, `(resolved: ...)`
+- Moving to completed.md → include both created and completed timestamps, plus duration in days for projects
+
+This enables analytics: how long projects take, when items were added, completion velocity, time-in-waiting-for, etc.
 
 ---
 

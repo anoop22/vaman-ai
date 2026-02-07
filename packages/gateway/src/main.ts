@@ -855,6 +855,41 @@ Gateway management:
 			return lines.join("\n");
 		}
 
+		// /heartbeat [model <ref|alias|clear>] - view/set heartbeat model
+		const hbMatch = trimmed.match(/^\/?(heartbeat)(?:\s+(.+))?$/i);
+		if (hbMatch) {
+			const args = (hbMatch[2] ?? "").trim();
+			const info = getHeartbeatModel();
+
+			if (!args) {
+				const modelStr = info.inherited
+					? `**${info.current}** (inherited from global)`
+					: `**${info.current}** (override)`;
+				return `**Heartbeat Model:** ${modelStr}\n\nUsage:\n\`heartbeat model <alias or provider/model>\` — set override\n\`heartbeat model clear\` — inherit global model`;
+			}
+
+			const modelMatch = args.match(/^model(?:\s+(.+))?$/i);
+			if (modelMatch) {
+				const ref = (modelMatch[1] ?? "").trim();
+				if (!ref) {
+					return `**Heartbeat Model:** ${info.inherited ? `${info.current} (inherited)` : `${info.current} (override)`}`;
+				}
+				if (ref.toLowerCase() === "clear") {
+					setHeartbeatModel(null);
+					const global = `${vamanConfig.agent.defaultProvider}/${vamanConfig.agent.defaultModel}`;
+					return `Heartbeat model override cleared. Now inherits global: **${global}**`;
+				}
+				const result = setHeartbeatModel(ref);
+				if (!result.ok) {
+					return `Error: ${result.error}`;
+				}
+				const updated = getHeartbeatModel();
+				return `Heartbeat model set to **${updated.current}**`;
+			}
+
+			return `Unknown subcommand: **${args}**\n\nUsage:\n\`heartbeat\` — show current\n\`heartbeat model <alias or provider/model>\` — set override\n\`heartbeat model clear\` — inherit global`;
+		}
+
 		// /restart - restart gateway via systemctl (survives because systemd relaunches the process)
 		const restartMatch = trimmed.match(/^\/?(restart)$/i);
 		if (restartMatch) {
@@ -901,8 +936,12 @@ Gateway management:
 	// Start Discord adapter if token is configured
 	let discord: DiscordAdapter | null = null;
 	if (vamanConfig.discord.enabled && vamanConfig.discord.token) {
+		const uploadDir = resolve(dataDir, "uploads");
+		mkdirSync(uploadDir, { recursive: true });
+
 		discord = new DiscordAdapter({
 			token: vamanConfig.discord.token,
+			uploadDir,
 			slashCommands: [
 				{
 					name: "models",
@@ -927,6 +966,11 @@ Gateway management:
 					name: "status",
 					description: "Show gateway status, model, channels, heartbeat, and sessions",
 				},
+				{
+					name: "heartbeat",
+					description: "View or set the heartbeat model",
+					options: [{ name: "model", description: "Alias or provider/model (or 'clear' to inherit global)", required: false }],
+				},
 			],
 			onSlashCommand: async (commandName, args, sessionKey) => {
 				if (commandName === "models") {
@@ -948,6 +992,11 @@ Gateway management:
 				}
 				if (commandName === "status") {
 					return handleCommand("/status") ?? "Unknown error";
+				}
+				if (commandName === "heartbeat") {
+					const model = args.model;
+					const content = model ? `/heartbeat model ${model}` : "/heartbeat";
+					return handleCommand(content) ?? "Unknown error";
 				}
 				return `Unknown command: /${commandName}`;
 			},
