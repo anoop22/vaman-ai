@@ -15,7 +15,7 @@ A lightweight personal AI assistant with Discord, Gmail, CLI, and voice interfac
 
 ```bash
 # Clone and install
-git clone https://github.com/yourusername/vaman-ai.git
+git clone https://github.com/anoop22/vaman-ai.git
 cd vaman-ai
 npm install
 
@@ -112,6 +112,16 @@ npm run check        # Lint + typecheck
 - macOS (for voice mode with mlx-audio)
 - ffmpeg (for audio recording)
 
+## Acknowledgments
+
+Vaman AI stands on the shoulders of two excellent open-source projects:
+
+- **[OpenClaw](https://github.com/openclaw/openclaw)** by Peter Steinberger (MIT License) — The original agentic CLI framework whose architecture inspired Vaman's gateway, session management, and tool system. Thank you for building such a clean, extensible foundation.
+
+- **[pi-mono](https://github.com/badlogic/pi-mono)** by Mario Zechner (MIT License) — The agentic harness and multi-provider LLM abstraction that powers Vaman's agent core. Thank you for making multi-model AI agents accessible and practical.
+
+Both projects are licensed under the MIT License. Their original copyright notices are preserved in `THIRD-PARTY-LICENSES`.
+
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE)
