@@ -13,6 +13,7 @@ import { statusCommand } from "./commands/status.js";
 import { sessionsCommand, resumeCommand } from "./commands/sessions.js";
 import { talkCommand } from "./commands/talk.js";
 import { onboardCommand } from "./commands/onboard.js";
+import { codingCommand } from "./commands/coding.js";
 
 const program = new Command();
 
@@ -48,6 +49,13 @@ program
 	.command("onboard")
 	.description("Interactive setup wizard for first-time configuration")
 	.action(onboardCommand);
+
+program
+	.command("coding")
+	.description("Start bridge client (route channel messages to local agent)")
+	.option("--session <id>", "Use specific session ID")
+	.option("--new-session", "Start fresh session")
+	.action(codingCommand);
 
 // Default to chat if no command given
 program.action(chatCommand);

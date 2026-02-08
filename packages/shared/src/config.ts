@@ -37,5 +37,11 @@ export function loadConfig(): VamanConfig {
 			worldModelMaxTokens: parseInt(process.env.STATE_WORLD_MODEL_MAX_TOKENS || "1000", 10),
 			userTimezone: process.env.USER_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone,
 		},
+		codingBridge: {
+			enabled: process.env.CODING_BRIDGE_ENABLED === "true",
+			command: process.env.CODING_BRIDGE_COMMAND ||
+				'claude -p --resume {session} --permission-mode bypassPermissions --output-format json {message}',
+			timeoutMs: parseInt(process.env.CODING_BRIDGE_TIMEOUT || "600000", 10),
+		},
 	};
 }

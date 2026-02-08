@@ -33,6 +33,11 @@ export interface VamanConfig {
 		worldModelMaxTokens: number;
 		userTimezone: string;
 	};
+	codingBridge: {
+		enabled: boolean;
+		command: string;
+		timeoutMs: number;
+	};
 }
 
 export interface SessionKey {

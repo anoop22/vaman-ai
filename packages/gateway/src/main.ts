@@ -33,6 +33,7 @@ import {
 	createStateReadTool,
 } from "./state/index.js";
 import { registerApiRoutes } from "./api/index.js";
+import { AgentBridge } from "./agent-bridge.js";
 
 const log = createLogger("gateway:main");
 
@@ -563,6 +564,14 @@ Gateway management:
 	// Register REST API now that all dependencies are available
 	registerApi();
 
+	// ── Agent Bridge — routes channel messages to a local agent process ──
+	const bridge = new AgentBridge({
+		timeoutMs: vamanConfig.codingBridge.timeoutMs,
+		log: (level, msg) => log[level === "info" ? "info" : level === "error" ? "error" : "debug"](msg),
+	});
+	bridge.registerRoutes(gateway.router);
+	log.info(`Agent bridge initialized (enabled: ${vamanConfig.codingBridge.enabled})`);
+
 	// Gateway-level command handler (intercepts before agent, zero token cost)
 	const PROVIDER_ENV_MAP: Record<string, { envVar: string; isOAuth?: boolean }> = {
 		openrouter: { envVar: "OPENROUTER_API_KEY" },
@@ -890,6 +899,52 @@ Gateway management:
 			return `Unknown subcommand: **${args}**\n\nUsage:\n\`heartbeat\` — show current\n\`heartbeat model <alias or provider/model>\` — set override\n\`heartbeat model clear\` — inherit global`;
 		}
 
+		// /coding [on|off|new|status] - toggle agent bridge (route messages to local agent)
+		const codingMatch = trimmed.match(/^\/?(coding)(?:\s+(.+))?$/i);
+		if (codingMatch) {
+			const arg = (codingMatch[2] ?? "").trim().toLowerCase();
+
+			if (!arg || arg === "status") {
+				const s = bridge.status();
+				if (!s.active) {
+					return "**Coding bridge:** off\n\nUse `/coding on` to route messages to your local agent.";
+				}
+				const lines = [
+					"**Coding Bridge**",
+					`  Active: yes`,
+					`  Session: \`${s.sessionId}\``,
+					`  Client: ${s.bridgeConnected ? "connected" : "waiting..."}`,
+					`  Pending: ${s.pendingMessages} messages, ${s.pendingRequests} requests`,
+					"",
+					"Commands: `/coding off` \u00b7 `/coding new`",
+				];
+				return lines.join("\n");
+			}
+
+			if (arg === "on") {
+				if (!vamanConfig.codingBridge.enabled) {
+					return "Coding bridge is disabled. Set `CODING_BRIDGE_ENABLED=true` in .env and restart.";
+				}
+				const sessionId = bridge.activate();
+				return `**Coding bridge activated!**\n\nSession: \`${sessionId}\`\nStart the bridge client: \`npx vaman coding\`\n\nAll messages will now route to your local agent.`;
+			}
+
+			if (arg === "off") {
+				bridge.deactivate();
+				return "**Coding bridge deactivated.** Messages will route to Nova again.";
+			}
+
+			if (arg === "new") {
+				if (!bridge.active) {
+					return "Bridge is not active. Use `/coding on` first.";
+				}
+				const sessionId = bridge.newSession();
+				return `**New coding session:** \`${sessionId}\``;
+			}
+
+			return "Usage: `/coding` \u00b7 `/coding on` \u00b7 `/coding off` \u00b7 `/coding new`";
+		}
+
 		// /restart - restart gateway via systemctl (survives because systemd relaunches the process)
 		const restartMatch = trimmed.match(/^\/?(restart)$/i);
 		if (restartMatch) {
@@ -971,6 +1026,11 @@ Gateway management:
 					description: "View or set the heartbeat model",
 					options: [{ name: "model", description: "Alias or provider/model (or 'clear' to inherit global)", required: false }],
 				},
+				{
+					name: "coding",
+					description: "Toggle coding bridge (route messages to local agent)",
+					options: [{ name: "action", description: "on, off, new, or status", required: false }],
+				},
 			],
 			onSlashCommand: async (commandName, args, sessionKey) => {
 				if (commandName === "models") {
@@ -996,6 +1056,11 @@ Gateway management:
 				if (commandName === "heartbeat") {
 					const model = args.model;
 					const content = model ? `/heartbeat model ${model}` : "/heartbeat";
+					return handleCommand(content) ?? "Unknown error";
+				}
+				if (commandName === "coding") {
+					const action = args.action;
+					const content = action ? `/coding ${action}` : "/coding";
 					return handleCommand(content) ?? "Unknown error";
 				}
 				return `Unknown command: /${commandName}`;
@@ -1056,7 +1121,16 @@ Gateway management:
 
 					// Check for gateway commands first (instant, no AI tokens)
 					const commandResponse = handleCommand(content);
-					const response = commandResponse ?? await promptAgent(content);
+
+					// Route: command > bridge > agent
+					let response: string;
+					if (commandResponse) {
+						response = commandResponse;
+					} else if (bridge.active) {
+						response = await bridge.routeMessage(content, sessionKey);
+					} else {
+						response = await promptAgent(content);
+					}
 
 					// Buffer assistant turn
 					const assistantNow = Date.now();
@@ -1077,8 +1151,8 @@ Gateway management:
 						timestamp: assistantNow,
 					});
 
-					// Fire async extraction (non-blocking)
-					if (!commandResponse) {
+					// Fire async extraction (non-blocking) — skip for commands and bridged messages
+					if (!commandResponse && !bridge.active) {
 						extractor.extract({
 							userMessage: content,
 							assistantResponse: response,
