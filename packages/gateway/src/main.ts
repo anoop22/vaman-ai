@@ -35,7 +35,91 @@ import {
 import { registerApiRoutes } from "./api/index.js";
 import { AgentBridge } from "./agent-bridge.js";
 
+import type { OutboundMessage } from "@vaman-ai/shared";
+
 const log = createLogger("gateway:main");
+
+const DISCORD_MAX_LENGTH = 2000;
+
+// Mime types for common file extensions
+const MIME_TYPES: Record<string, string> = {
+	".md": "text/markdown", ".txt": "text/plain", ".json": "application/json",
+	".csv": "text/csv", ".html": "text/html", ".xml": "text/xml",
+	".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg",
+	".jpeg": "image/jpeg", ".gif": "image/gif", ".mp3": "audio/mpeg",
+	".wav": "audio/wav", ".mp4": "video/mp4", ".zip": "application/zip",
+};
+
+function guessMime(filename: string): string {
+	const ext = filename.slice(filename.lastIndexOf(".")).toLowerCase();
+	return MIME_TYPES[ext] || "application/octet-stream";
+}
+
+/**
+ * Parse agent response for file markers, read filesystem files, and build OutboundMessage.
+ *
+ * Supported markers in agent text:
+ *   [FILE:name.ext]inline content here[/FILE]   — inline text content as attachment
+ *   [ATTACH:path/to/file.ext]                   — existing file from disk
+ *
+ * Any remaining text after extraction is sent as the text message.
+ * If the remaining text still exceeds Discord's limit, it also gets attached as response.md.
+ */
+function prepareOutbound(text: string, replyTo?: string): OutboundMessage {
+	const files: Array<{ name: string; data: Buffer; mimeType: string }> = [];
+	let remaining = text;
+
+	// Extract [FILE:name]content[/FILE] blocks — inline content
+	remaining = remaining.replace(
+		/\[FILE:([^\]]+)\]([\s\S]*?)\[\/FILE\]/g,
+		(_match, name: string, content: string) => {
+			files.push({
+				name: name.trim(),
+				data: Buffer.from(content.trim(), "utf-8"),
+				mimeType: guessMime(name.trim()),
+			});
+			return "";
+		},
+	);
+
+	// Extract [ATTACH:path] — existing files on disk
+	remaining = remaining.replace(
+		/\[ATTACH:([^\]]+)\]/g,
+		(_match, filePath: string) => {
+			const trimmed = filePath.trim();
+			try {
+				// Resolve relative paths against workspace
+				const absPath = resolve(process.cwd(), trimmed);
+				const data = readFileSync(absPath);
+				const name = absPath.split("/").pop() || "file";
+				files.push({ name, data, mimeType: guessMime(name) });
+			} catch (err) {
+				log.error(`Failed to read attached file ${trimmed}: ${err}`);
+				return `(failed to attach: ${trimmed})`;
+			}
+			return "";
+		},
+	);
+
+	// Clean up leftover blank lines from marker extraction
+	remaining = remaining.replace(/\n{3,}/g, "\n\n").trim();
+
+	// If remaining text is still too long, attach it as a file too
+	if (remaining.length > DISCORD_MAX_LENGTH) {
+		files.push({
+			name: "response.md",
+			data: Buffer.from(remaining, "utf-8"),
+			mimeType: "text/markdown",
+		});
+		remaining = "Response attached as file.";
+	}
+
+	return {
+		text: remaining || (files.length > 0 ? "File attached." : "(no response)"),
+		replyTo,
+		...(files.length > 0 ? { files } : {}),
+	};
+}
 
 async function main() {
 	const vamanConfig = loadConfig();
@@ -71,7 +155,7 @@ async function main() {
 
 	// ── Proactive systems: Heartbeat & Cron ──
 	// Track last DM user/session for proactive message delivery & session integration
-	let lastDMUserId = "";
+	let lastDMUserId = vamanConfig.discord.dmUserId;
 	let lastDMSessionKey = "";
 
 	// Delivery function — routes proactive messages to Discord channels
@@ -188,7 +272,7 @@ async function main() {
 	const cron = new CronService(dataDir, {
 		onJobRun: (job) => promptAgent(job.prompt),
 		onDeliver: deliverMessage,
-	});
+	}, vamanConfig.state.userTimezone);
 
 	// Cron management tool — lets the agent CRUD cron jobs
 	const cronTool = createCronManageTool(cron);
@@ -212,7 +296,16 @@ Gateway management:
 - To restart the gateway, use the gateway_restart tool — NEVER use bash to kill/restart the process directly
 - After restarting, you will automatically come back online and confirm in the chat
 - Use gateway_restart after making code changes, adding/editing skills, or when configuration needs reloading
-- You ARE the gateway process — using bash to kill it would kill you mid-response with no reply`;
+- You ARE the gateway process — using bash to kill it would kill you mid-response with no reply
+
+Sending files to Discord:
+- To send a file with your response, use these markers in your text:
+  - Inline content: [FILE:filename.ext]content here[/FILE] — the content becomes a file attachment
+  - Existing file: [ATTACH:path/to/file.ext] — reads the file from disk and attaches it
+- Use this for plans, scripts, documents, audio, images, PDFs — any file the user requests
+- Example: writing a plan → wrap it in [FILE:plan.md]...your plan...[/FILE]
+- Example: generated audio → [ATTACH:data/output/podcast.mp3]
+- The markers are stripped from your visible text, so write a brief message alongside them`;
 
 	const agent = createVamanAgent({
 		config: vamanConfig,
@@ -567,6 +660,7 @@ Gateway management:
 	// ── Agent Bridge — routes channel messages to a local agent process ──
 	const bridge = new AgentBridge({
 		timeoutMs: vamanConfig.codingBridge.timeoutMs,
+		statePath: resolve(process.cwd(), "data/state/bridge.json"),
 		log: (level, msg) => log[level === "info" ? "info" : level === "error" ? "error" : "debug"](msg),
 	});
 	bridge.registerRoutes(gateway.router);
@@ -1164,7 +1258,7 @@ Gateway management:
 					if (discord) {
 						const parts = sessionKey.split(":");
 						const target = parts.slice(2).join(":");
-						await discord.send(target, { text: response, replyTo });
+						await discord.send(target, prepareOutbound(response, replyTo));
 					}
 				} catch (err) {
 					log.error(`Agent error for ${sessionKey}: ${err}`);

@@ -14,7 +14,7 @@ When the user asks to create a podcast episode, follow this process:
 3. **Script**: Write a podcast script in conversational style
 4. **Generate audio**: Use the tts_generate tool with Kokoro TTS
 5. **Save**: Output to `data/podcasts/YYYY-MM-DD-<title-slug>.wav`
-6. **Deliver**: Send the audio file to the user via the originating channel
+6. **Deliver**: Include `[ATTACH:data/podcasts/YYYY-MM-DD-<title-slug>.mp3]` in your response to send the file to Discord
 
 ## Script Format
 

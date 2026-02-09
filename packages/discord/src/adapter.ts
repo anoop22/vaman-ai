@@ -56,6 +56,7 @@ export class DiscordAdapter implements ChannelAdapter {
 				GatewayIntentBits.MessageContent,
 			],
 			partials: [Partials.Channel],
+			rest: { timeout: 120_000 },
 		});
 	}
 
@@ -224,21 +225,43 @@ export class DiscordAdapter implements ChannelAdapter {
 			return;
 		}
 
-		if (message.text) {
-			// Chunk long messages
-			const chunks = chunkMessage(message.text, MAX_MESSAGE_LENGTH);
+		const files = message.files?.map((f) => ({
+			attachment: f.data,
+			name: f.name,
+		})) ?? [];
+		const text = message.text ?? "";
+
+		if (files.length > 0) {
+			// Try sending text+files together as a single message
+			if (text.trim().length > 0 && text.length <= MAX_MESSAGE_LENGTH) {
+				try {
+					await (channel as any).send({ content: text, files });
+				} catch (err) {
+					log.error(`File send failed (content+files) to ${target}: ${err}`);
+					// Fall back: send text-only, skip files
+					try {
+						await (channel as any).send(text + "\n\n*(file attachment failed)*");
+					} catch {}
+				}
+			} else {
+				// Long text: chunk text first, then send files separately
+				if (text.trim().length > 0) {
+					const chunks = chunkMessage(text, MAX_MESSAGE_LENGTH);
+					for (const chunk of chunks) {
+						await (channel as any).send(chunk);
+					}
+				}
+				try {
+					await (channel as any).send({ files });
+				} catch (err) {
+					log.error(`File send failed (files-only) to ${target}: ${err}`);
+				}
+			}
+		} else if (text.trim().length > 0) {
+			const chunks = chunkMessage(text, MAX_MESSAGE_LENGTH);
 			for (const chunk of chunks) {
 				await (channel as any).send(chunk);
 			}
-		}
-
-		if (message.files?.length) {
-			await (channel as any).send({
-				files: message.files.map((f) => ({
-					attachment: f.data,
-					name: f.name,
-				})),
-			});
 		}
 
 		this.lastActivity = new Date();
