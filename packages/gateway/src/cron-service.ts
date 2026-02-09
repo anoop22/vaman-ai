@@ -37,13 +37,16 @@ export class CronService {
 	private runners = new Map<string, Cron>();
 	private jobsPath: string;
 	private runsDir: string;
+	private timezone?: string;
 
 	constructor(
 		private dataDir: string,
 		private callbacks: CronCallbacks,
+		timezone?: string,
 	) {
 		this.jobsPath = resolve(dataDir, "cron", "jobs.json");
 		this.runsDir = resolve(dataDir, "cron", "runs");
+		this.timezone = timezone;
 		mkdirSync(this.runsDir, { recursive: true });
 	}
 
@@ -130,14 +133,24 @@ export class CronService {
 	private scheduleJob(job: CronJob): void {
 		try {
 			const pattern = this.toCronPattern(job);
-			const runner = new Cron(pattern, async () => {
+			const opts = this.timezone ? { timezone: this.timezone } : {};
+			const runner = new Cron(pattern, opts, async () => {
 				await this.executeJob(job);
 			});
 			this.runners.set(job.id, runner);
-			log.debug(`Scheduled job ${job.name}: ${pattern}`);
+			log.debug(`Scheduled job ${job.name}: ${pattern} (tz: ${this.timezone || "system"})`);
 		} catch (err) {
 			log.error(`Failed to schedule job ${job.name}:`, err);
 		}
+	}
+
+	/** Trigger a job on demand by ID */
+	async triggerJob(id: string): Promise<string> {
+		const job = this.jobs.get(id);
+		if (!job) throw new Error(`Job not found: ${id}`);
+		log.info(`Manually triggered job: ${job.name}`);
+		await this.executeJob(job);
+		return `Job "${job.name}" triggered`;
 	}
 
 	/** Execute a single job */

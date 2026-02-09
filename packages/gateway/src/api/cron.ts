@@ -26,6 +26,16 @@ export function registerCronRoutes(router: HttpRouter, ctx: ApiContext): void {
 		sendJson(res, job, 201);
 	});
 
+	router.post("/api/cron/jobs/:id/trigger", async (_req, res, params) => {
+		try {
+			const result = await ctx.cron.triggerJob(params.id);
+			sendJson(res, { ok: true, message: result });
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			sendError(res, 404, msg);
+		}
+	});
+
 	router.delete("/api/cron/jobs/:id", async (_req, res, params) => {
 		const removed = ctx.cron.removeJob(params.id);
 		if (removed) {

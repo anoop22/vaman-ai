@@ -1,0 +1,22 @@
+[
+	{
+		"id": "job-morning-briefing",
+		"name": "Morning Briefing",
+		"scheduleType": "cron",
+		"schedule": "0 7 * * *",
+		"prompt": "[CRON: Morning Briefing] It's 7 AM — time to create today's daily execution view.\n\n1. Read all GTD state files:\n   - data/gtd/next-actions.md\n   - data/gtd/routines.md\n   - data/gtd/areas.md\n   - data/gtd/waiting-for.md\n   - data/gtd/inbox.md\n   - data/state/world-model.md\n\n2. Reset daily routine checkboxes in data/gtd/routines.md (uncheck all items under Daily)\n\n3. Read data/gtd/today.md first. If a section for today's date already exists, SKIP creating a new one — just update the existing section if needed. Only append a new section if today's date is NOT already present. Format:\n\n## YYYY-MM-DD (Day of Week)\n\n### Morning Routine\n- [ ] (items from routines.md > Daily > Morning)\n\n### Today's Actions\n- [ ] (top next actions from next-actions.md, prioritized)\n\n### Daily Commitments\n- [ ] (items from routines.md > Daily > Throughout Day)\n- [ ] (weekly items due today from routines.md > Weekly)\n\n### Follow-ups\n- [ ] (any waiting-for items that need attention)\n\n### Evening Routine\n- [ ] (items from routines.md > Daily > Evening)\n\n### Night Routine\n- [ ] (items from routines.md > Daily > Night)\n\n4. If inbox has unprocessed items, add a note at the top.\n5. IMPORTANT: Append to today.md — do NOT overwrite previous days.\n6. After writing, send a brief summary (3-5 bullet points) of today's priorities.",
+		"delivery": "discord:dm",
+		"enabled": true,
+		"createdAt": 1738972800000
+	},
+	{
+		"id": "job-evening-reconciliation",
+		"name": "Evening Reconciliation",
+		"scheduleType": "cron",
+		"schedule": "0 22 * * *",
+		"prompt": "[CRON: Evening Reconciliation] It's 10 PM — time to reconcile today.\n\n1. Read data/gtd/today.md — find today's section (the last date header)\n2. Read data/gtd/completed.md, data/gtd/next-actions.md, data/gtd/routines.md\n\n3. For each item in today's section:\n   - If checked [x]: Move to data/gtd/completed.md with timestamp (done: YYYY-MM-DD HH:MM)\n   - If unchecked [ ] and it's a next-action: Leave in next-actions.md for tomorrow\n   - If unchecked [ ] and it's a routine: Note as missed (no action needed, resets tomorrow)\n\n4. Add a summary line at the end of today's section in today.md:\n   **Summary**: X of Y items completed. [brief note on what got done and what carried over]\n\n5. Update any GTD files that changed.\n\n6. Send a brief daily wrap-up: what was accomplished, what carries forward, and any items to be aware of tomorrow.",
+		"delivery": "discord:dm",
+		"enabled": true,
+		"createdAt": 1738972800000
+	}
+]

@@ -116,6 +116,7 @@ All live state is stored in `data/gtd/`. You read and write these files using yo
 | `data/gtd/routines.md` | Recurring daily/weekly commitments with checkboxes |
 | `data/gtd/completed.md` | Archive of finished projects, resolved items, retired areas |
 | `data/gtd/weekly-review.md` | Review checklist and last review notes |
+| `data/gtd/today.md` | Daily execution view — rolling log of each day's tasks |
 
 ### File Formats
 
@@ -315,6 +316,53 @@ During heartbeat runs (every ~30 minutes), you receive the heartbeat prompt. Whe
 7. If nothing needs attention, respond with "all clear"
 
 **Never be generic.** Always reference actual items from the state files.
+
+---
+
+## Daily Execution View — today.md
+
+`data/gtd/today.md` is a rolling daily log that acts as the daily working document. It sits on top of GTD as the execution layer.
+
+### Daily Cycle
+
+1. **7 AM — Morning Briefing** (cron job): Appends today's date section to `today.md` by pulling from GTD files (routines, next actions, waiting-for, weekly items). Resets daily routine checkboxes in `routines.md`.
+2. **During the day — Heartbeat**: Uses `today.md` as the primary working view. Checks items off when the user reports completion. Nudges based on what's remaining.
+3. **10 PM — Evening Reconciliation** (cron job): Reviews today's section. Moves completed items to `completed.md`. Notes incomplete items. Adds a daily summary line.
+
+### Format
+
+Each day is **appended** (never overwritten), building a rolling history:
+
+```markdown
+## 2026-02-08 (Saturday)
+
+### Morning Routine
+- [x] Wake up routine (meditation, journaling)
+- [x] Review today's next actions
+- [ ] Exercise
+
+### Today's Actions
+- [x] Deploy coding bridge fix
+- [ ] Build today.md system
+
+### Daily Commitments
+- [x] Eat healthy
+- [ ] Hydration check
+
+### Follow-ups
+- (none)
+
+### Evening Routine
+- [ ] Capture anything from today into inbox
+- [ ] Prep tomorrow's priorities
+- [ ] Night routine (wind-down)
+
+**Summary**: 4 of 9 items completed. Deployed bridge fix, today.md build carries forward.
+```
+
+### When the user asks "What's on my plate today?"
+
+Read `today.md`, find today's section, and summarize what's done vs remaining. Reference specific items.
 
 ---
 
