@@ -1,4 +1,6 @@
 import { randomUUID } from "crypto";
+import { readFileSync, writeFileSync, mkdirSync } from "fs";
+import { dirname } from "path";
 import type { HttpRouter } from "./http-router.js";
 import { parseBody, sendJson, sendError } from "./http-router.js";
 
@@ -20,6 +22,7 @@ import { parseBody, sendJson, sendError } from "./http-router.js";
 
 export interface AgentBridgeOptions {
 	timeoutMs?: number;
+	statePath?: string;
 	log?: (level: string, msg: string) => void;
 }
 
@@ -46,11 +49,43 @@ export class AgentBridge {
 	private pollResolve: ((msg: QueuedMessage | null) => void) | null = null;
 	private pollTimer: ReturnType<typeof setTimeout> | null = null;
 	private timeoutMs: number;
+	private statePath: string | null;
 	private log: (level: string, msg: string) => void;
 
 	constructor(opts?: AgentBridgeOptions) {
 		this.timeoutMs = opts?.timeoutMs ?? 600_000;
+		this.statePath = opts?.statePath ?? null;
 		this.log = opts?.log ?? ((level, msg) => console.log(`[bridge:${level}] ${msg}`));
+		this.restoreState();
+	}
+
+	/** Persist bridge state to disk */
+	private saveState(): void {
+		if (!this.statePath) return;
+		try {
+			mkdirSync(dirname(this.statePath), { recursive: true });
+			writeFileSync(this.statePath, JSON.stringify({
+				active: this.active,
+				sessionId: this.sessionId,
+			}), "utf-8");
+		} catch (err) {
+			this.log("error", `Failed to save bridge state: ${err}`);
+		}
+	}
+
+	/** Restore bridge state from disk */
+	private restoreState(): void {
+		if (!this.statePath) return;
+		try {
+			const data = JSON.parse(readFileSync(this.statePath, "utf-8"));
+			if (data.active) {
+				this.active = true;
+				this.sessionId = data.sessionId || randomUUID();
+				this.log("info", `Bridge restored (session: ${this.sessionId})`);
+			}
+		} catch {
+			// No state file or invalid — start fresh
+		}
 	}
 
 	/** Activate bridge, assign session ID if needed */
@@ -58,6 +93,7 @@ export class AgentBridge {
 		this.active = true;
 		this.sessionId ??= randomUUID();
 		this.log("info", `Bridge activated (session: ${this.sessionId})`);
+		this.saveState();
 		return this.sessionId;
 	}
 
@@ -84,12 +120,14 @@ export class AgentBridge {
 
 		this.queue.length = 0;
 		this.log("info", "Bridge deactivated");
+		this.saveState();
 	}
 
 	/** Start a new session (new session ID) */
 	newSession(): string {
 		this.sessionId = randomUUID();
 		this.log("info", `New session: ${this.sessionId}`);
+		this.saveState();
 		return this.sessionId;
 	}
 
