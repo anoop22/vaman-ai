@@ -2,7 +2,7 @@
 
 **Date**: 2026-02-08
 **Component**: Coding Bridge (CLI client → Claude Code backend)
-**Status**: Open
+**Status**: Fixed (Option A implemented)
 
 ## Problem
 

@@ -10,6 +10,7 @@ export interface VamanConfig {
 	discord: {
 		token: string;
 		enabled: boolean;
+		dmUserId: string;
 	};
 	gmail: {
 		credentialsPath: string;
@@ -37,6 +38,9 @@ export interface VamanConfig {
 		enabled: boolean;
 		command: string;
 		timeoutMs: number;
+		dir: string;
+		session: string;
+		mode: "new" | "continue";
 	};
 }
 

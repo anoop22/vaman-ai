@@ -53,8 +53,8 @@ program
 program
 	.command("coding")
 	.description("Start bridge client (route channel messages to local agent)")
-	.option("--session <id>", "Use specific session ID")
-	.option("--new-session", "Start fresh session")
+	.option("--session <id>", "Continue a specific Claude Code session by ID")
+	.option("--new-session", "Start a fresh Claude Code session (default)")
 	.action(codingCommand);
 
 // Default to chat if no command given

@@ -9,7 +9,7 @@ function makeConfig(overrides?: Partial<VamanConfig["heartbeat"]>): VamanConfig 
 	return {
 		gateway: { port: 18790, host: "127.0.0.1" },
 		agent: { defaultModel: "test", defaultProvider: "test" },
-		discord: { token: "", enabled: false },
+		discord: { token: "", enabled: false, dmUserId: "" },
 		gmail: { credentialsPath: "", address: "", enabled: false, pollIntervalMs: 60000 },
 		heartbeat: {
 			enabled: true,
@@ -27,6 +27,14 @@ function makeConfig(overrides?: Partial<VamanConfig["heartbeat"]>): VamanConfig 
 			extractionTimeoutMs: 5000,
 			worldModelMaxTokens: 1000,
 			userTimezone: "America/New_York",
+		},
+		codingBridge: {
+			enabled: false,
+			command: "echo {message}",
+			timeoutMs: 600000,
+			dir: "/tmp",
+			session: "",
+			mode: "new" as const,
 		},
 	};
 }

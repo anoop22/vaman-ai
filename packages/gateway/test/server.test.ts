@@ -12,7 +12,7 @@ function makeConfig(port = TEST_PORT): VamanConfig {
 	return {
 		gateway: { port, host: "127.0.0.1" },
 		agent: { defaultModel: "google/gemini-3-flash-preview", defaultProvider: "openrouter" },
-		discord: { token: "", enabled: false },
+		discord: { token: "", enabled: false, dmUserId: "" },
 		gmail: {
 			credentialsPath: "",
 			address: "",
@@ -34,6 +34,14 @@ function makeConfig(port = TEST_PORT): VamanConfig {
 			extractionTimeoutMs: 5000,
 			worldModelMaxTokens: 1000,
 			userTimezone: "America/New_York",
+		},
+		codingBridge: {
+			enabled: false,
+			command: "echo {message}",
+			timeoutMs: 600000,
+			dir: "/tmp",
+			session: "",
+			mode: "new" as const,
 		},
 	};
 }

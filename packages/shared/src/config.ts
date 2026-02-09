@@ -13,6 +13,7 @@ export function loadConfig(): VamanConfig {
 		discord: {
 			token: process.env.DISCORD_BOT_TOKEN || "",
 			enabled: !!process.env.DISCORD_BOT_TOKEN,
+			dmUserId: process.env.DISCORD_DM_USER_ID || "",
 		},
 		gmail: {
 			credentialsPath:
@@ -40,8 +41,11 @@ export function loadConfig(): VamanConfig {
 		codingBridge: {
 			enabled: process.env.CODING_BRIDGE_ENABLED === "true",
 			command: process.env.CODING_BRIDGE_COMMAND ||
-				'claude -p --resume {session} --permission-mode bypassPermissions --output-format json {message}',
+				"claude -p --permission-mode bypassPermissions --output-format json {message}",
 			timeoutMs: parseInt(process.env.CODING_BRIDGE_TIMEOUT || "600000", 10),
+			dir: process.env.CODING_BRIDGE_DIR || process.cwd(),
+			session: process.env.CODING_BRIDGE_SESSION || "",
+			mode: (process.env.CODING_BRIDGE_MODE as "new" | "continue") || "new",
 		},
 	};
 }
